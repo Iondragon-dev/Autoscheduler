@@ -28,6 +28,48 @@ export const GetTimeSlotsResponseItem = zod.object({
 export const GetTimeSlotsResponse = zod.array(GetTimeSlotsResponseItem);
 
 /**
+ * @summary Create a new time slot (teacher only)
+ */
+export const CreateTimeSlotBody = zod.object({
+  label: zod.string(),
+  startTime: zod.string(),
+  endTime: zod.string(),
+});
+
+/**
+ * @summary Toggle availability of a time slot (teacher only)
+ */
+export const UpdateTimeSlotParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateTimeSlotBody = zod.object({
+  available: zod.boolean().optional(),
+  label: zod.string().optional(),
+  startTime: zod.string().optional(),
+  endTime: zod.string().optional(),
+});
+
+export const UpdateTimeSlotResponse = zod.object({
+  id: zod.number(),
+  label: zod.string(),
+  startTime: zod.string(),
+  endTime: zod.string(),
+  available: zod.boolean(),
+});
+
+/**
+ * @summary Delete a time slot (teacher only)
+ */
+export const DeleteTimeSlotParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteTimeSlotResponse = zod.object({
+  message: zod.string(),
+});
+
+/**
  * @summary Get all bookings
  */
 export const GetBookingsResponseItem = zod.object({

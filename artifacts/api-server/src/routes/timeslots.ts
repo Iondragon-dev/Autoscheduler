@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, timeSlotsTable, bookingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { CreateBookingBody } from "@workspace/api-zod";
+import { CreateBookingBody, CreateTimeSlotBody, UpdateTimeSlotBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
@@ -14,6 +14,76 @@ router.get("/timeslots", async (_req, res) => {
     endTime: s.endTime,
     available: s.available,
   })));
+});
+
+router.post("/timeslots", async (req, res) => {
+  const parsed = CreateTimeSlotBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ message: "Invalid request body" });
+    return;
+  }
+
+  const { label, startTime, endTime } = parsed.data;
+  const [slot] = await db.insert(timeSlotsTable).values({ label, startTime, endTime, available: true }).returning();
+  res.status(201).json({
+    id: slot.id,
+    label: slot.label,
+    startTime: slot.startTime,
+    endTime: slot.endTime,
+    available: slot.available,
+  });
+});
+
+router.patch("/timeslots/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) {
+    res.status(400).json({ message: "Invalid id" });
+    return;
+  }
+
+  const parsed = UpdateTimeSlotBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ message: "Invalid request body" });
+    return;
+  }
+
+  const updates: Partial<{ label: string; startTime: string; endTime: string; available: boolean }> = {};
+  if (parsed.data.available !== undefined) updates.available = parsed.data.available;
+  if (parsed.data.label !== undefined) updates.label = parsed.data.label;
+  if (parsed.data.startTime !== undefined) updates.startTime = parsed.data.startTime;
+  if (parsed.data.endTime !== undefined) updates.endTime = parsed.data.endTime;
+
+  const [updated] = await db.update(timeSlotsTable).set(updates).where(eq(timeSlotsTable.id, id)).returning();
+  if (!updated) {
+    res.status(404).json({ message: "Time slot not found" });
+    return;
+  }
+
+  res.json({
+    id: updated.id,
+    label: updated.label,
+    startTime: updated.startTime,
+    endTime: updated.endTime,
+    available: updated.available,
+  });
+});
+
+router.delete("/timeslots/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) {
+    res.status(400).json({ message: "Invalid id" });
+    return;
+  }
+
+  const existing = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.id, id)).limit(1);
+  if (!existing.length) {
+    res.status(404).json({ message: "Time slot not found" });
+    return;
+  }
+
+  await db.delete(bookingsTable).where(eq(bookingsTable.timeSlotId, id));
+  await db.delete(timeSlotsTable).where(eq(timeSlotsTable.id, id));
+  res.json({ message: "Deleted successfully" });
 });
 
 router.get("/bookings", async (_req, res) => {

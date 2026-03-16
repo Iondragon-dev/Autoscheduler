@@ -17,6 +17,19 @@ export interface TimeSlot {
   available: boolean;
 }
 
+export interface CreateTimeSlotRequest {
+  label: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface UpdateTimeSlotRequest {
+  available?: boolean;
+  label?: string;
+  startTime?: string;
+  endTime?: string;
+}
+
 export interface Booking {
   id: number;
   timeSlotId: number;
@@ -33,5 +46,9 @@ export interface CreateBookingRequest {
 }
 
 export interface ErrorResponse {
+  message: string;
+}
+
+export interface SuccessResponse {
   message: string;
 }

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Calendar, Clock, User, Mail, AlertCircle, ArrowRight } from "lucide-react";
 import { useGetTimeSlots, useCreateBooking } from "@workspace/api-client-react";
 import type { Booking } from "@workspace/api-client-react/src/generated/api.schemas";
+import { Link } from "wouter";
 
 import { useBookingForm } from "@/hooks/use-booking-form";
 import { Input } from "@/components/ui/input";
@@ -283,6 +284,13 @@ export default function Home() {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Teacher link */}
+      <div className="relative z-10 text-center mt-6">
+        <Link href="/teacher" className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
+          Teacher Area
+        </Link>
       </div>
     </div>
   );

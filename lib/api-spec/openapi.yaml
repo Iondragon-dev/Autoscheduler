@@ -39,6 +39,82 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/TimeSlot"
+    post:
+      operationId: createTimeSlot
+      tags: [timeslots]
+      summary: Create a new time slot (teacher only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTimeSlotRequest"
+      responses:
+        "201":
+          description: Time slot created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeSlot"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /timeslots/{id}:
+    patch:
+      operationId: updateTimeSlot
+      tags: [timeslots]
+      summary: Toggle availability of a time slot (teacher only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTimeSlotRequest"
+      responses:
+        "200":
+          description: Time slot updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeSlot"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteTimeSlot
+      tags: [timeslots]
+      summary: Delete a time slot (teacher only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /bookings:
     get:
       operationId: getBookings
@@ -104,6 +180,30 @@ components:
         - startTime
         - endTime
         - available
+    CreateTimeSlotRequest:
+      type: object
+      properties:
+        label:
+          type: string
+        startTime:
+          type: string
+        endTime:
+          type: string
+      required:
+        - label
+        - startTime
+        - endTime
+    UpdateTimeSlotRequest:
+      type: object
+      properties:
+        available:
+          type: boolean
+        label:
+          type: string
+        startTime:
+          type: string
+        endTime:
+          type: string
     Booking:
       type: object
       properties:
@@ -140,6 +240,13 @@ components:
         - name
         - email
     ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
+    SuccessResponse:
       type: object
       properties:
         message:

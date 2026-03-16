@@ -19,9 +19,12 @@ import type {
 import type {
   Booking,
   CreateBookingRequest,
+  CreateTimeSlotRequest,
   ErrorResponse,
   HealthStatus,
+  SuccessResponse,
   TimeSlot,
+  UpdateTimeSlotRequest,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -183,6 +186,263 @@ export function useGetTimeSlots<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Create a new time slot (teacher only)
+ */
+export const getCreateTimeSlotUrl = () => {
+  return `/api/timeslots`;
+};
+
+export const createTimeSlot = async (
+  createTimeSlotRequest: CreateTimeSlotRequest,
+  options?: RequestInit,
+): Promise<TimeSlot> => {
+  return customFetch<TimeSlot>(getCreateTimeSlotUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createTimeSlotRequest),
+  });
+};
+
+export const getCreateTimeSlotMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTimeSlot>>,
+    TError,
+    { data: BodyType<CreateTimeSlotRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createTimeSlot>>,
+  TError,
+  { data: BodyType<CreateTimeSlotRequest> },
+  TContext
+> => {
+  const mutationKey = ["createTimeSlot"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createTimeSlot>>,
+    { data: BodyType<CreateTimeSlotRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createTimeSlot(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateTimeSlotMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createTimeSlot>>
+>;
+export type CreateTimeSlotMutationBody = BodyType<CreateTimeSlotRequest>;
+export type CreateTimeSlotMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create a new time slot (teacher only)
+ */
+export const useCreateTimeSlot = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTimeSlot>>,
+    TError,
+    { data: BodyType<CreateTimeSlotRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createTimeSlot>>,
+  TError,
+  { data: BodyType<CreateTimeSlotRequest> },
+  TContext
+> => {
+  return useMutation(getCreateTimeSlotMutationOptions(options));
+};
+
+/**
+ * @summary Toggle availability of a time slot (teacher only)
+ */
+export const getUpdateTimeSlotUrl = (id: number) => {
+  return `/api/timeslots/${id}`;
+};
+
+export const updateTimeSlot = async (
+  id: number,
+  updateTimeSlotRequest: UpdateTimeSlotRequest,
+  options?: RequestInit,
+): Promise<TimeSlot> => {
+  return customFetch<TimeSlot>(getUpdateTimeSlotUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateTimeSlotRequest),
+  });
+};
+
+export const getUpdateTimeSlotMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTimeSlot>>,
+    TError,
+    { id: number; data: BodyType<UpdateTimeSlotRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateTimeSlot>>,
+  TError,
+  { id: number; data: BodyType<UpdateTimeSlotRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateTimeSlot"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateTimeSlot>>,
+    { id: number; data: BodyType<UpdateTimeSlotRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateTimeSlot(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateTimeSlotMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateTimeSlot>>
+>;
+export type UpdateTimeSlotMutationBody = BodyType<UpdateTimeSlotRequest>;
+export type UpdateTimeSlotMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Toggle availability of a time slot (teacher only)
+ */
+export const useUpdateTimeSlot = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTimeSlot>>,
+    TError,
+    { id: number; data: BodyType<UpdateTimeSlotRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateTimeSlot>>,
+  TError,
+  { id: number; data: BodyType<UpdateTimeSlotRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateTimeSlotMutationOptions(options));
+};
+
+/**
+ * @summary Delete a time slot (teacher only)
+ */
+export const getDeleteTimeSlotUrl = (id: number) => {
+  return `/api/timeslots/${id}`;
+};
+
+export const deleteTimeSlot = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getDeleteTimeSlotUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteTimeSlotMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteTimeSlot>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteTimeSlot>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteTimeSlot"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteTimeSlot>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteTimeSlot(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteTimeSlotMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteTimeSlot>>
+>;
+
+export type DeleteTimeSlotMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Delete a time slot (teacher only)
+ */
+export const useDeleteTimeSlot = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteTimeSlot>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteTimeSlot>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteTimeSlotMutationOptions(options));
+};
 
 /**
  * @summary Get all bookings

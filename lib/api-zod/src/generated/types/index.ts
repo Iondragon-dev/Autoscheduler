@@ -8,6 +8,9 @@
 
 export * from "./booking";
 export * from "./createBookingRequest";
+export * from "./createTimeSlotRequest";
 export * from "./errorResponse";
 export * from "./healthStatus";
+export * from "./successResponse";
 export * from "./timeSlot";
+export * from "./updateTimeSlotRequest";
