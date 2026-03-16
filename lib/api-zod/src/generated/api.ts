@@ -14,3 +14,37 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * @summary Get available time slots
+ */
+export const GetTimeSlotsResponseItem = zod.object({
+  id: zod.number(),
+  label: zod.string(),
+  startTime: zod.string(),
+  endTime: zod.string(),
+  available: zod.boolean(),
+});
+export const GetTimeSlotsResponse = zod.array(GetTimeSlotsResponseItem);
+
+/**
+ * @summary Get all bookings
+ */
+export const GetBookingsResponseItem = zod.object({
+  id: zod.number(),
+  timeSlotId: zod.number(),
+  timeSlotLabel: zod.string(),
+  name: zod.string(),
+  email: zod.string(),
+  createdAt: zod.string(),
+});
+export const GetBookingsResponse = zod.array(GetBookingsResponseItem);
+
+/**
+ * @summary Book a time slot
+ */
+export const CreateBookingBody = zod.object({
+  timeSlotId: zod.number(),
+  name: zod.string(),
+  email: zod.string(),
+});

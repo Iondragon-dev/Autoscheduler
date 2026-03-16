@@ -1,6 +1,5 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
   description: API specification
@@ -10,6 +9,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: timeslots
+    description: Time slot booking operations
 paths:
   /healthz:
     get:
@@ -24,6 +25,57 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /timeslots:
+    get:
+      operationId: getTimeSlots
+      tags: [timeslots]
+      summary: Get available time slots
+      responses:
+        "200":
+          description: List of time slots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeSlot"
+  /bookings:
+    get:
+      operationId: getBookings
+      tags: [timeslots]
+      summary: Get all bookings
+      responses:
+        "200":
+          description: List of bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Booking"
+    post:
+      operationId: createBooking
+      tags: [timeslots]
+      summary: Book a time slot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookingRequest"
+      responses:
+        "201":
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +85,64 @@ components:
           type: string
       required:
         - status
-
+    TimeSlot:
+      type: object
+      properties:
+        id:
+          type: integer
+        label:
+          type: string
+        startTime:
+          type: string
+        endTime:
+          type: string
+        available:
+          type: boolean
+      required:
+        - id
+        - label
+        - startTime
+        - endTime
+        - available
+    Booking:
+      type: object
+      properties:
+        id:
+          type: integer
+        timeSlotId:
+          type: integer
+        timeSlotLabel:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - timeSlotId
+        - timeSlotLabel
+        - name
+        - email
+        - createdAt
+    CreateBookingRequest:
+      type: object
+      properties:
+        timeSlotId:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+      required:
+        - timeSlotId
+        - name
+        - email
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message

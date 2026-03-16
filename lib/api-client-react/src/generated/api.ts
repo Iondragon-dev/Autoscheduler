@@ -5,18 +5,27 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  Booking,
+  CreateBookingRequest,
+  ErrorResponse,
+  HealthStatus,
+  TimeSlot,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -99,3 +108,239 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Get available time slots
+ */
+export const getGetTimeSlotsUrl = () => {
+  return `/api/timeslots`;
+};
+
+export const getTimeSlots = async (
+  options?: RequestInit,
+): Promise<TimeSlot[]> => {
+  return customFetch<TimeSlot[]>(getGetTimeSlotsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTimeSlotsQueryKey = () => {
+  return [`/api/timeslots`] as const;
+};
+
+export const getGetTimeSlotsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTimeSlots>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTimeSlots>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTimeSlotsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTimeSlots>>> = ({
+    signal,
+  }) => getTimeSlots({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTimeSlots>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTimeSlotsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTimeSlots>>
+>;
+export type GetTimeSlotsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get available time slots
+ */
+
+export function useGetTimeSlots<
+  TData = Awaited<ReturnType<typeof getTimeSlots>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTimeSlots>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTimeSlotsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get all bookings
+ */
+export const getGetBookingsUrl = () => {
+  return `/api/bookings`;
+};
+
+export const getBookings = async (
+  options?: RequestInit,
+): Promise<Booking[]> => {
+  return customFetch<Booking[]>(getGetBookingsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetBookingsQueryKey = () => {
+  return [`/api/bookings`] as const;
+};
+
+export const getGetBookingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBookings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBookings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetBookingsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getBookings>>> = ({
+    signal,
+  }) => getBookings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBookings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBookingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBookings>>
+>;
+export type GetBookingsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get all bookings
+ */
+
+export function useGetBookings<
+  TData = Awaited<ReturnType<typeof getBookings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBookings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBookingsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Book a time slot
+ */
+export const getCreateBookingUrl = () => {
+  return `/api/bookings`;
+};
+
+export const createBooking = async (
+  createBookingRequest: CreateBookingRequest,
+  options?: RequestInit,
+): Promise<Booking> => {
+  return customFetch<Booking>(getCreateBookingUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createBookingRequest),
+  });
+};
+
+export const getCreateBookingMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createBooking>>,
+    TError,
+    { data: BodyType<CreateBookingRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createBooking>>,
+  TError,
+  { data: BodyType<CreateBookingRequest> },
+  TContext
+> => {
+  const mutationKey = ["createBooking"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createBooking>>,
+    { data: BodyType<CreateBookingRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createBooking(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateBookingMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createBooking>>
+>;
+export type CreateBookingMutationBody = BodyType<CreateBookingRequest>;
+export type CreateBookingMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Book a time slot
+ */
+export const useCreateBooking = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createBooking>>,
+    TError,
+    { data: BodyType<CreateBookingRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createBooking>>,
+  TError,
+  { data: BodyType<CreateBookingRequest> },
+  TContext
+> => {
+  return useMutation(getCreateBookingMutationOptions(options));
+};

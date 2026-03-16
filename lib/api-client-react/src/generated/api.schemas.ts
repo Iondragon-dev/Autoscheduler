@@ -8,3 +8,30 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface TimeSlot {
+  id: number;
+  label: string;
+  startTime: string;
+  endTime: string;
+  available: boolean;
+}
+
+export interface Booking {
+  id: number;
+  timeSlotId: number;
+  timeSlotLabel: string;
+  name: string;
+  email: string;
+  createdAt: string;
+}
+
+export interface CreateBookingRequest {
+  timeSlotId: number;
+  name: string;
+  email: string;
+}
+
+export interface ErrorResponse {
+  message: string;
+}

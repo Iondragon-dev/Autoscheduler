@@ -1,0 +1,18 @@
+packages:
+  "framer-motion": "For page transitions, smooth layout changes, and success animations"
+  "react-hook-form": "For robust, performant form state management"
+  "@hookform/resolvers": "For Zod schema validation integration with react-hook-form"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility to efficiently merge Tailwind CSS classes"
+
+images:
+  - path: "artifacts/time-slot-form/public/images/bg-mesh.png"
+    description: "Soft, very light and minimal abstract gradient mesh background in pastel teal, blue, and lavender, highly friendly, airy, and clean"
+    aspect_ratio: "16:9"
+  - path: "artifacts/time-slot-form/public/images/success-calendar.png"
+    description: "Minimalist, cute 3D icon of a calendar with a green checkmark, soft studio lighting, clean white background, friendly and premium style"
+    aspect_ratio: "1:1"
+
+notes:
+  - Expects the API endpoints /api/timeslots and /api/bookings to be available.
+  - Using generated hooks from @workspace/api-client-react.
