@@ -16,6 +16,10 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 
+## Notes
+
+- **Google Calendar integration**: User dismissed the Replit Google Calendar OAuth flow. If revisited, the connector ID is `connector:ccfg_google-calendar_DDDBAC03DE404369B74F32E78D`. Alternatively, manual credentials (Client ID, Client Secret, Calendar ID) can be stored as secrets to use the Google Calendar API directly.
+
 ## Structure
 
 ```text

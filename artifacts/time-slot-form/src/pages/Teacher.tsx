@@ -7,7 +7,7 @@ import {
   useDeleteTimeSlot,
   useGetBookings,
 } from "@workspace/api-client-react";
-import { Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft, AlertCircle, Calendar } from "lucide-react";
+import { Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft, AlertCircle, Calendar, ChevronDown, Mail, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,7 @@ export default function Teacher() {
   const [tab, setTab] = useState<"slots" | "bookings">("slots");
   const [showAddForm, setShowAddForm] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [expandedSlotId, setExpandedSlotId] = useState<number | null>(null);
   const [form, setForm] = useState<NewSlotForm>({ label: "", startTime: "", endTime: "" });
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -63,6 +64,7 @@ export default function Teacher() {
       {
         onSuccess: () => {
           setDeleteConfirmId(null);
+          if (expandedSlotId === id) setExpandedSlotId(null);
           refetchSlots();
           refetchBookings();
         },
@@ -108,7 +110,7 @@ export default function Teacher() {
               {t === "slots" ? (
                 <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" />Time Slots</span>
               ) : (
-                <span className="flex items-center gap-1.5"><Users className="w-4 h-4" />Bookings ({bookings?.length ?? 0})</span>
+                <span className="flex items-center gap-1.5"><Users className="w-4 h-4" />All Bookings ({bookings?.length ?? 0})</span>
               )}
             </button>
           ))}
@@ -124,7 +126,6 @@ export default function Teacher() {
               transition={{ duration: 0.25 }}
               className="space-y-4"
             >
-              {/* Add slot button */}
               <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-lg p-5">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-bold text-foreground text-lg">Available Slots</h2>
@@ -151,7 +152,7 @@ export default function Teacher() {
                       <div className="bg-muted/30 rounded-xl p-4 mb-4 border border-border space-y-3">
                         <p className="text-sm font-semibold text-foreground mb-2">New Time Slot</p>
                         <div>
-                          <label className="block text-xs text-muted-foreground mb-1 font-medium">Label (e.g. Monday 9:00 AM - 10:00 AM)</label>
+                          <label className="block text-xs text-muted-foreground mb-1 font-medium">Label (e.g. Monday 9:00 AM – 10:00 AM)</label>
                           <Input
                             placeholder="Monday 9:00 AM – 10:00 AM"
                             value={form.label}
@@ -181,11 +182,7 @@ export default function Teacher() {
                             <AlertCircle className="w-4 h-4" />{formError}
                           </p>
                         )}
-                        <Button
-                          className="w-full"
-                          onClick={handleAddSlot}
-                          isLoading={createSlot.isPending}
-                        >
+                        <Button className="w-full" onClick={handleAddSlot} isLoading={createSlot.isPending}>
                           Add Slot
                         </Button>
                       </div>
@@ -209,6 +206,9 @@ export default function Teacher() {
                     {slots.map((slot) => {
                       const slotBookings = bookingsForSlot(slot.id);
                       const isDeleting = deleteConfirmId === slot.id;
+                      const isExpanded = expandedSlotId === slot.id;
+                      const hasBookings = slotBookings.length > 0;
+
                       return (
                         <motion.div
                           key={slot.id}
@@ -217,67 +217,141 @@ export default function Teacher() {
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: 10 }}
                           className={cn(
-                            "flex items-center justify-between p-4 rounded-xl border transition-all",
-                            slot.available
-                              ? "bg-card border-border"
-                              : "bg-muted/40 border-border opacity-70"
+                            "rounded-xl border transition-all overflow-hidden",
+                            slot.available ? "bg-card border-border" : "bg-muted/40 border-border opacity-70"
                           )}
                         >
-                          <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-foreground text-sm truncate">{slot.label}</div>
-                            <div className="text-xs text-muted-foreground flex items-center gap-3 mt-0.5">
-                              <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                {slot.startTime} – {slot.endTime}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <Users className="w-3 h-3" />
-                                {slotBookings.length} booking{slotBookings.length !== 1 ? "s" : ""}
-                              </span>
+                          {/* Slot header row */}
+                          <div className="flex items-center p-4 gap-3">
+                            {/* Expand toggle — only if there are bookings */}
+                            <button
+                              type="button"
+                              disabled={!hasBookings}
+                              onClick={() => setExpandedSlotId(isExpanded ? null : slot.id)}
+                              className={cn(
+                                "shrink-0 flex items-center justify-center w-8 h-8 rounded-lg transition-colors",
+                                hasBookings
+                                  ? "hover:bg-muted cursor-pointer"
+                                  : "cursor-default opacity-30"
+                              )}
+                              title={hasBookings ? (isExpanded ? "Hide bookings" : "Show bookings") : "No bookings yet"}
+                            >
+                              <ChevronDown
+                                className={cn(
+                                  "w-4 h-4 text-muted-foreground transition-transform duration-200",
+                                  isExpanded && "rotate-180"
+                                )}
+                              />
+                            </button>
+
+                            {/* Slot info */}
+                            <div
+                              className="flex-1 min-w-0 cursor-pointer select-none"
+                              onClick={() => hasBookings && setExpandedSlotId(isExpanded ? null : slot.id)}
+                            >
+                              <div className="font-semibold text-foreground text-sm truncate">{slot.label}</div>
+                              <div className="text-xs text-muted-foreground flex items-center gap-3 mt-0.5">
+                                <span className="flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  {slot.startTime} – {slot.endTime}
+                                </span>
+                                <span className={cn(
+                                  "flex items-center gap-1 font-medium",
+                                  hasBookings ? "text-primary" : "text-muted-foreground"
+                                )}>
+                                  <Users className="w-3 h-3" />
+                                  {slotBookings.length} {slotBookings.length === 1 ? "booking" : "bookings"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={() => handleToggle(slot.id, slot.available)}
+                                title={slot.available ? "Mark as unavailable" : "Mark as available"}
+                                className="text-muted-foreground hover:text-foreground transition-colors"
+                              >
+                                {slot.available ? (
+                                  <ToggleRight className="w-6 h-6 text-primary" />
+                                ) : (
+                                  <ToggleLeft className="w-6 h-6" />
+                                )}
+                              </button>
+
+                              {!isDeleting ? (
+                                <button
+                                  onClick={() => setDeleteConfirmId(slot.id)}
+                                  title="Delete slot"
+                                  className="text-muted-foreground hover:text-destructive transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs text-destructive font-medium">Delete?</span>
+                                  <button
+                                    onClick={() => handleDelete(slot.id)}
+                                    className="text-xs bg-destructive text-destructive-foreground px-2 py-0.5 rounded-md font-semibold"
+                                  >
+                                    Yes
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteConfirmId(null)}
+                                    className="text-xs text-muted-foreground hover:text-foreground"
+                                  >
+                                    No
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 ml-3 shrink-0">
-                            {/* Available toggle */}
-                            <button
-                              onClick={() => handleToggle(slot.id, slot.available)}
-                              title={slot.available ? "Mark as unavailable" : "Mark as available"}
-                              className="text-muted-foreground hover:text-foreground transition-colors"
-                            >
-                              {slot.available ? (
-                                <ToggleRight className="w-6 h-6 text-primary" />
-                              ) : (
-                                <ToggleLeft className="w-6 h-6" />
-                              )}
-                            </button>
-
-                            {/* Delete */}
-                            {!isDeleting ? (
-                              <button
-                                onClick={() => setDeleteConfirmId(slot.id)}
-                                title="Delete slot"
-                                className="text-muted-foreground hover:text-destructive transition-colors"
+                          {/* Expanded bookings list */}
+                          <AnimatePresence>
+                            {isExpanded && hasBookings && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: "auto", opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="overflow-hidden"
                               >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            ) : (
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs text-destructive font-medium">Delete?</span>
-                                <button
-                                  onClick={() => handleDelete(slot.id)}
-                                  className="text-xs bg-destructive text-destructive-foreground px-2 py-0.5 rounded-md font-semibold"
-                                >
-                                  Yes
-                                </button>
-                                <button
-                                  onClick={() => setDeleteConfirmId(null)}
-                                  className="text-xs text-muted-foreground hover:text-foreground"
-                                >
-                                  No
-                                </button>
-                              </div>
+                                <div className="border-t border-border mx-4 mb-3" />
+                                <div className="px-4 pb-4 space-y-2">
+                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                                    Registered Students
+                                  </p>
+                                  {slotBookings.map((b, i) => (
+                                    <motion.div
+                                      key={b.id}
+                                      initial={{ opacity: 0, y: -4 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      transition={{ delay: i * 0.04 }}
+                                      className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/50"
+                                    >
+                                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs shrink-0">
+                                        {b.name.charAt(0).toUpperCase()}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                                          <User className="w-3 h-3 text-muted-foreground shrink-0" />
+                                          <span className="truncate">{b.name}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                                          <Mail className="w-3 h-3 shrink-0" />
+                                          <span className="truncate">{b.email}</span>
+                                        </div>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground shrink-0">
+                                        {new Date(b.createdAt).toLocaleDateString()}
+                                      </div>
+                                    </motion.div>
+                                  ))}
+                                </div>
+                              </motion.div>
                             )}
-                          </div>
+                          </AnimatePresence>
                         </motion.div>
                       );
                     })}
@@ -303,12 +377,18 @@ export default function Teacher() {
                   <div className="space-y-2">
                     {bookings.map((b) => (
                       <div key={b.id} className="flex items-start gap-4 p-4 rounded-xl border border-border bg-card">
-                        <div className="flex items-center justify-center w-9 h-9 rounded-full bg-primary/10 shrink-0">
-                          <Calendar className="w-4 h-4 text-primary" />
+                        <div className="flex items-center justify-center w-9 h-9 rounded-full bg-primary/10 text-primary font-bold text-sm shrink-0">
+                          {b.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-foreground text-sm">{b.name}</div>
-                          <div className="text-xs text-muted-foreground">{b.email}</div>
+                          <div className="font-semibold text-foreground text-sm flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-muted-foreground" />
+                            {b.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                            <Mail className="w-3 h-3" />
+                            {b.email}
+                          </div>
                           <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             {b.timeSlotLabel}
