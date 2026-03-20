@@ -16,12 +16,14 @@ const PRIORITY_META = [
   { label: "3rd Choice", sub: "Third preference", starColor: "text-slate-300", fillStar: false, ring: "ring-slate-300/30", activeBg: "bg-slate-50/60 border-slate-300" },
 ];
 
-function fmt12(t: string): string {
-  if (!t) return "";
-  const [h, m] = t.split(":").map(Number);
-  const ampm = h >= 12 ? "PM" : "AM";
-  return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ampm}`;
-}
+const DURATIONS = [
+  { mins: 15, label: "15 min" },
+  { mins: 30, label: "30 min" },
+  { mins: 45, label: "45 min" },
+  { mins: 60, label: "1 hour" },
+  { mins: 90, label: "1.5 hrs" },
+  { mins: 120, label: "2 hours" },
+];
 
 function toMinutes(t: string) {
   const [h, m] = t.split(":").map(Number);
@@ -34,17 +36,41 @@ function fromMinutes(mins: number) {
   return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
 }
 
-function generateSubBlocks(startTime: string, endTime: string, stepMins = 60): string[] {
+function fmt12(t: string): string {
+  if (!t) return "";
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ampm}`;
+}
+
+/** Format a stored priority string ("HH:MM-HH:MM") for display */
+function fmtPriority(p: string): string {
+  if (!p) return "";
+  if (p.includes("-")) {
+    const [s, e] = p.split("-");
+    return `${fmt12(s)} – ${fmt12(e)}`;
+  }
+  return fmt12(p);
+}
+
+interface SubBlock { start: string; end: string; value: string; }
+
+function generateSubBlocks(startTime: string, endTime: string, stepMins: number): SubBlock[] {
   const start = toMinutes(startTime);
   const end = toMinutes(endTime);
-  const blocks: string[] = [];
-  for (let t = start; t < end; t += stepMins) blocks.push(fromMinutes(t));
+  const blocks: SubBlock[] = [];
+  for (let t = start; t + stepMins <= end; t += stepMins) {
+    const s = fromMinutes(t);
+    const e = fromMinutes(t + stepMins);
+    blocks.push({ start: s, end: e, value: `${s}-${e}` });
+  }
   return blocks;
 }
 
 export default function Home() {
   const { data: slots, isLoading: isLoadingSlots, isError: isSlotsError } = useGetTimeSlots();
   const createBooking = useCreateBooking();
+  const [durationMins, setDurationMins] = useState(60);
 
   const form = useBookingForm();
   const { register, handleSubmit, formState: { errors }, watch, setValue } = form;
@@ -59,7 +85,9 @@ export default function Home() {
   const priorityFields = ["priority1", "priority2", "priority3"] as const;
 
   const selectedSlot = slots?.find((s) => s.id === selectedSlotId);
-  const subBlocks = selectedSlot ? generateSubBlocks(selectedSlot.startTime, selectedSlot.endTime) : [];
+  const subBlocks = selectedSlot
+    ? generateSubBlocks(selectedSlot.startTime, selectedSlot.endTime, durationMins)
+    : [];
 
   const onSubmit = (values: any) => {
     createBooking.mutate(
@@ -95,7 +123,7 @@ export default function Home() {
               <div className="mb-10 text-center">
                 <h1 className="text-4xl font-display font-bold text-foreground mb-3">Book a Session</h1>
                 <p className="text-lg text-muted-foreground">
-                  Pick an available block, then rank your three preferred times.
+                  Pick a block, choose your session length, then rank your three preferred times.
                 </p>
               </div>
 
@@ -168,9 +196,9 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* Step 2: Pick priorities as blocks */}
+                {/* Step 2: Duration + priority blocks (only after block selected) */}
                 <AnimatePresence>
-                  {selectedSlot && subBlocks.length > 0 && (
+                  {selectedSlot && (
                     <motion.div
                       key="priorities"
                       initial={{ opacity: 0, height: 0 }}
@@ -180,72 +208,120 @@ export default function Home() {
                       className="overflow-hidden"
                     >
                       <div className="h-px w-full bg-gradient-to-r from-transparent via-border to-transparent mb-10" />
-                      <div className="space-y-6">
-                        <div className="flex items-center space-x-2 text-foreground">
-                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">2</div>
-                          <div>
-                            <h2 className="text-xl font-bold font-display">Rank Your Preferred Times</h2>
-                            <p className="text-sm text-muted-foreground">Select one block for each preference.</p>
+                      <div className="space-y-8">
+
+                        {/* Duration selector */}
+                        <div>
+                          <div className="flex items-center space-x-2 text-foreground mb-4">
+                            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">2</div>
+                            <h2 className="text-xl font-bold font-display">Session Length</h2>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {DURATIONS.map(({ mins, label }) => {
+                              const fits = selectedSlot
+                                ? toMinutes(selectedSlot.endTime) - toMinutes(selectedSlot.startTime) >= mins
+                                : true;
+                              const active = durationMins === mins;
+                              return (
+                                <button
+                                  key={mins}
+                                  type="button"
+                                  disabled={!fits}
+                                  onClick={() => {
+                                    setDurationMins(mins);
+                                    setValue("priority1", "", { shouldValidate: false });
+                                    setValue("priority2", "", { shouldValidate: false });
+                                    setValue("priority3", "", { shouldValidate: false });
+                                  }}
+                                  className={cn(
+                                    "px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all",
+                                    active
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : fits
+                                      ? "border-border bg-card hover:border-primary/40 hover:bg-primary/5 text-foreground"
+                                      : "border-border/30 bg-muted/20 text-muted-foreground/40 cursor-not-allowed"
+                                  )}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
 
-                        {PRIORITY_META.map((meta, pi) => {
-                          const field = priorityFields[pi];
-                          const selected = priorities[pi];
-                          const otherPicks = priorities.filter((_, oi) => oi !== pi);
-
-                          return (
-                            <div key={pi} className="space-y-2">
-                              {/* Priority label */}
-                              <div className="flex items-center gap-2">
-                                <Star className={cn("w-4 h-4", meta.starColor, meta.fillStar ? "fill-current" : "")} />
-                                <span className="text-sm font-semibold text-foreground">{meta.label}</span>
-                                <span className="text-xs text-muted-foreground">{meta.sub}</span>
-                                {selected && (
-                                  <span className="ml-auto text-xs font-semibold text-primary">{fmt12(selected)}</span>
-                                )}
+                        {/* Priority block pickers */}
+                        {subBlocks.length > 0 ? (
+                          <div className="space-y-6">
+                            <div className="flex items-center space-x-2 text-foreground">
+                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">3</div>
+                              <div>
+                                <h2 className="text-xl font-bold font-display">Rank Your Preferred Times</h2>
+                                <p className="text-sm text-muted-foreground">Select one block per preference.</p>
                               </div>
-
-                              {/* Clickable sub-blocks */}
-                              <div className="flex flex-wrap gap-2">
-                                {subBlocks.map((time) => {
-                                  const isActive = selected === time;
-                                  const isPicked = otherPicks.includes(time);
-
-                                  return (
-                                    <button
-                                      key={time}
-                                      type="button"
-                                      disabled={isPicked}
-                                      onClick={() => setValue(field, time, { shouldValidate: true })}
-                                      className={cn(
-                                        "flex flex-col items-center px-4 py-3 rounded-xl border-2 text-sm font-medium transition-all duration-200 min-w-[80px]",
-                                        isActive
-                                          ? `${meta.activeBg} shadow-sm ring-2 ${meta.ring} scale-[1.05]`
-                                          : isPicked
-                                          ? "border-border/40 bg-muted/20 text-muted-foreground/40 cursor-not-allowed"
-                                          : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 text-foreground cursor-pointer"
-                                      )}
-                                    >
-                                      <Clock className={cn("w-3.5 h-3.5 mb-1", isActive ? "text-current" : "text-muted-foreground")} />
-                                      {fmt12(time)}
-                                      {isPicked && (
-                                        <span className="text-[10px] mt-0.5 text-muted-foreground/50">Taken</span>
-                                      )}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-
-                              {errors[field] && (
-                                <p className="text-xs font-medium text-destructive flex items-center gap-1">
-                                  <AlertCircle className="w-3 h-3" />
-                                  Please select a time for your {meta.label.toLowerCase()}.
-                                </p>
-                              )}
                             </div>
-                          );
-                        })}
+
+                            {PRIORITY_META.map((meta, pi) => {
+                              const field = priorityFields[pi];
+                              const selected = priorities[pi];
+                              const otherPicks = priorities.filter((_, oi) => oi !== pi);
+
+                              return (
+                                <div key={pi} className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <Star className={cn("w-4 h-4", meta.starColor, meta.fillStar ? "fill-current" : "")} />
+                                    <span className="text-sm font-semibold text-foreground">{meta.label}</span>
+                                    <span className="text-xs text-muted-foreground">{meta.sub}</span>
+                                    {selected && (
+                                      <span className="ml-auto text-xs font-semibold text-primary">{fmtPriority(selected)}</span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex flex-wrap gap-2">
+                                    {subBlocks.map((block) => {
+                                      const isActive = selected === block.value;
+                                      const isPicked = otherPicks.includes(block.value);
+
+                                      return (
+                                        <button
+                                          key={block.value}
+                                          type="button"
+                                          disabled={isPicked}
+                                          onClick={() => setValue(field, block.value, { shouldValidate: true })}
+                                          className={cn(
+                                            "flex flex-col items-center px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all duration-200",
+                                            isActive
+                                              ? `${meta.activeBg} shadow-sm ring-2 ${meta.ring} scale-[1.04]`
+                                              : isPicked
+                                              ? "border-border/40 bg-muted/20 text-muted-foreground/40 cursor-not-allowed"
+                                              : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 text-foreground cursor-pointer"
+                                          )}
+                                        >
+                                          <Clock className={cn("w-3 h-3 mb-1", isActive ? "text-current" : "text-muted-foreground")} />
+                                          <span className="text-xs font-semibold">{fmt12(block.start)}</span>
+                                          <span className={cn("text-[10px]", isActive ? "text-current/70" : "text-muted-foreground")}>
+                                            – {fmt12(block.end)}
+                                          </span>
+                                          {isPicked && <span className="text-[9px] mt-0.5 text-muted-foreground/50">Taken</span>}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+
+                                  {errors[field] && (
+                                    <p className="text-xs font-medium text-destructive flex items-center gap-1">
+                                      <AlertCircle className="w-3 h-3" />
+                                      Please select a time for your {meta.label.toLowerCase()}.
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="p-4 rounded-xl bg-muted/30 border border-border text-sm text-muted-foreground text-center">
+                            The selected duration doesn't fit within this block. Try a shorter session length.
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   )}
@@ -253,11 +329,11 @@ export default function Home() {
 
                 <div className="h-px w-full bg-gradient-to-r from-transparent via-border to-transparent" />
 
-                {/* Step 3: Personal Details */}
+                {/* Personal Details */}
                 <div className="space-y-6">
                   <div className="flex items-center space-x-2 text-foreground mb-4">
                     <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">
-                      {selectedSlot ? "3" : "2"}
+                      {selectedSlot ? "4" : "2"}
                     </div>
                     <h2 className="text-xl font-bold font-display">Your Details</h2>
                   </div>
@@ -344,7 +420,7 @@ export default function Home() {
                       <div key={i} className="flex items-center gap-2 text-sm">
                         <Star className={cn("w-3.5 h-3.5 shrink-0", meta.starColor, meta.fillStar ? "fill-current" : "")} />
                         <span className="text-muted-foreground text-xs w-16 font-medium">{meta.label}</span>
-                        <span className="font-semibold text-foreground">{fmt12(p)}</span>
+                        <span className="font-semibold text-foreground">{fmtPriority(p)}</span>
                       </div>
                     ))}
                   </div>

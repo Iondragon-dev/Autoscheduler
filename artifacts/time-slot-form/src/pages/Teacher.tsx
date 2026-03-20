@@ -34,6 +34,16 @@ function fmt12(time24: string): string {
   return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 
+/** Display a priority value — handles both "HH:MM" and "HH:MM-HH:MM" */
+function fmtPriority(p: string): string {
+  if (!p) return "—";
+  if (p.includes("-")) {
+    const [s, e] = p.split("-");
+    return `${fmt12(s)} – ${fmt12(e)}`;
+  }
+  return fmt12(p);
+}
+
 const PRIORITY_COLORS = ["text-amber-500", "text-slate-500", "text-slate-400"];
 
 function parseSlotsFromResponse(text: string): ParsedSlot[] | null {
@@ -568,7 +578,7 @@ function WeeklyCalendar() {
                                         {[b.priority1, b.priority2, b.priority3].map((p, pi) => (
                                           <div key={pi} className="flex items-center gap-1 text-xs bg-background rounded-md px-1.5 py-0.5 border border-border/50">
                                             <Star className={cn("w-2.5 h-2.5", PRIORITY_COLORS[pi], pi === 0 ? "fill-current" : "")} />
-                                            <span className="font-medium">{fmt12(p)}</span>
+                                            <span className="font-medium">{fmtPriority(p)}</span>
                                           </div>
                                         ))}
                                       </div>
@@ -778,7 +788,7 @@ export default function Teacher() {
                                         {[b.priority1, b.priority2, b.priority3].map((p, pi) => (
                                           <div key={pi} className="flex items-center gap-1 text-xs bg-background rounded-lg px-2 py-1 border border-border/50">
                                             <Star className={cn("w-3 h-3", PRIORITY_COLORS[pi], pi === 0 ? "fill-current" : "")} />
-                                            <span className="font-medium text-foreground">{fmt12(p)}</span>
+                                            <span className="font-medium text-foreground">{fmtPriority(p)}</span>
                                           </div>
                                         ))}
                                       </div>
