@@ -217,6 +217,12 @@ components:
           type: string
         email:
           type: string
+        priority1:
+          type: string
+        priority2:
+          type: string
+        priority3:
+          type: string
         createdAt:
           type: string
       required:
@@ -225,6 +231,9 @@ components:
         - timeSlotLabel
         - name
         - email
+        - priority1
+        - priority2
+        - priority3
         - createdAt
     CreateBookingRequest:
       type: object
@@ -235,10 +244,19 @@ components:
           type: string
         email:
           type: string
+        priority1:
+          type: string
+        priority2:
+          type: string
+        priority3:
+          type: string
       required:
         - timeSlotId
         - name
         - email
+        - priority1
+        - priority2
+        - priority3
     ErrorResponse:
       type: object
       properties:

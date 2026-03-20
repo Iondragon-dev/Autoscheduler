@@ -19,10 +19,10 @@ Your job:
 </TIMESLOTS>
 
 Rules for the JSON:
-- One entry per 1-hour slot (split longer windows into 1-hour blocks)
+- Create ONE block per day (do NOT split into hourly chunks)
+- The block spans the teacher's full available window for that day (e.g., 09:00 to 13:00)
 - Use 24-hour format for startTime and endTime
-- Use a clear, human-readable label like "Monday 9:00 AM – 10:00 AM"
-- Maximum 3 slots per day
+- Use a clear, human-readable label like "Monday 9:00 AM – 1:00 PM"
 
 After the TIMESLOTS block, add one short friendly closing sentence.`;
 

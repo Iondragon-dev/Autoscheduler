@@ -15,6 +15,9 @@ export const bookingsTable = pgTable("bookings", {
   timeSlotId: integer("time_slot_id").notNull().references(() => timeSlotsTable.id),
   name: text("name").notNull(),
   email: text("email").notNull(),
+  priority1: text("priority1").notNull(),
+  priority2: text("priority2").notNull(),
+  priority3: text("priority3").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

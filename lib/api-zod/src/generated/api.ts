@@ -78,6 +78,9 @@ export const GetBookingsResponseItem = zod.object({
   timeSlotLabel: zod.string(),
   name: zod.string(),
   email: zod.string(),
+  priority1: zod.string(),
+  priority2: zod.string(),
+  priority3: zod.string(),
   createdAt: zod.string(),
 });
 export const GetBookingsResponse = zod.array(GetBookingsResponseItem);
@@ -89,4 +92,7 @@ export const CreateBookingBody = zod.object({
   timeSlotId: zod.number(),
   name: zod.string(),
   email: zod.string(),
+  priority1: zod.string(),
+  priority2: zod.string(),
+  priority3: zod.string(),
 });

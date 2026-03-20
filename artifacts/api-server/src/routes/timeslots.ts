@@ -93,6 +93,9 @@ router.get("/bookings", async (_req, res) => {
     timeSlotLabel: timeSlotsTable.label,
     name: bookingsTable.name,
     email: bookingsTable.email,
+    priority1: bookingsTable.priority1,
+    priority2: bookingsTable.priority2,
+    priority3: bookingsTable.priority3,
     createdAt: bookingsTable.createdAt,
   })
   .from(bookingsTable)
@@ -113,15 +116,15 @@ router.post("/bookings", async (req, res) => {
     return;
   }
 
-  const { timeSlotId, name, email } = parsed.data;
+  const { timeSlotId, name, email, priority1, priority2, priority3 } = parsed.data;
 
   const slot = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.id, timeSlotId)).limit(1);
   if (!slot.length) {
-    res.status(400).json({ message: "Time slot not found" });
+    res.status(400).json({ message: "Time block not found" });
     return;
   }
 
-  const [booking] = await db.insert(bookingsTable).values({ timeSlotId, name, email }).returning();
+  const [booking] = await db.insert(bookingsTable).values({ timeSlotId, name, email, priority1, priority2, priority3 }).returning();
 
   res.status(201).json({
     id: booking.id,
@@ -129,6 +132,9 @@ router.post("/bookings", async (req, res) => {
     timeSlotLabel: slot[0].label,
     name: booking.name,
     email: booking.email,
+    priority1: booking.priority1,
+    priority2: booking.priority2,
+    priority3: booking.priority3,
     createdAt: booking.createdAt.toISOString(),
   });
 });

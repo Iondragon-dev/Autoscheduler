@@ -10,7 +10,7 @@ import {
 import {
   Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft,
   AlertCircle, Calendar, ChevronDown, Mail, User, Sparkles, X,
-  Bot, CheckCircle2, ArrowRight, Loader2,
+  Bot, CheckCircle2, ArrowRight, Loader2, Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,16 @@ const DAY_SHORT: Record<string, string> = {
   Monday: "Mon", Tuesday: "Tue", Wednesday: "Wed",
   Thursday: "Thu", Friday: "Fri", Saturday: "Sat", Sunday: "Sun",
 };
+
+function fmt12(time24: string): string {
+  if (!time24) return "—";
+  const [h, m] = time24.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`;
+}
+
+const PRIORITY_COLORS = ["text-amber-500", "text-slate-500", "text-slate-400"];
 
 function parseSlotsFromResponse(text: string): ParsedSlot[] | null {
   const match = text.match(/<TIMESLOTS>([\s\S]*?)<\/TIMESLOTS>/);
@@ -546,11 +556,21 @@ function WeeklyCalendar() {
                               <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} className="overflow-hidden">
                                 <div className="mt-1 ml-4 space-y-1">
                                   {slotBookings.map((b, i) => (
-                                    <motion.div key={b.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }} className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-muted/40 border border-border/50">
-                                      <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">{b.name.charAt(0).toUpperCase()}</div>
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-xs font-semibold text-foreground truncate">{b.name}</p>
-                                        <p className="text-xs text-muted-foreground truncate">{b.email}</p>
+                                    <motion.div key={b.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }} className="px-3 py-2 rounded-lg bg-muted/40 border border-border/50 space-y-1.5">
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">{b.name.charAt(0).toUpperCase()}</div>
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-xs font-semibold text-foreground truncate">{b.name}</p>
+                                          <p className="text-xs text-muted-foreground truncate">{b.email}</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {[b.priority1, b.priority2, b.priority3].map((p, pi) => (
+                                          <div key={pi} className="flex items-center gap-1 text-xs bg-background rounded-md px-1.5 py-0.5 border border-border/50">
+                                            <Star className={cn("w-2.5 h-2.5", PRIORITY_COLORS[pi], pi === 0 ? "fill-current" : "")} />
+                                            <span className="font-medium">{fmt12(p)}</span>
+                                          </div>
+                                        ))}
                                       </div>
                                     </motion.div>
                                   ))}
@@ -745,13 +765,23 @@ export default function Teacher() {
                                 <div className="px-4 pb-4 space-y-2">
                                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Registered Students</p>
                                   {slotBookings.map((b, i) => (
-                                    <motion.div key={b.id} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/50">
-                                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs shrink-0">{b.name.charAt(0).toUpperCase()}</div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground"><User className="w-3 h-3 text-muted-foreground shrink-0" /><span className="truncate">{b.name}</span></div>
-                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{b.email}</span></div>
+                                    <motion.div key={b.id} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} className="p-3 rounded-lg bg-muted/30 border border-border/50 space-y-2">
+                                      <div className="flex items-center gap-3">
+                                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs shrink-0">{b.name.charAt(0).toUpperCase()}</div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground"><User className="w-3 h-3 text-muted-foreground shrink-0" /><span className="truncate">{b.name}</span></div>
+                                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{b.email}</span></div>
+                                        </div>
+                                        <div className="text-xs text-muted-foreground shrink-0">{new Date(b.createdAt).toLocaleDateString()}</div>
                                       </div>
-                                      <div className="text-xs text-muted-foreground shrink-0">{new Date(b.createdAt).toLocaleDateString()}</div>
+                                      <div className="flex flex-wrap gap-2 pt-1 border-t border-border/40">
+                                        {[b.priority1, b.priority2, b.priority3].map((p, pi) => (
+                                          <div key={pi} className="flex items-center gap-1 text-xs bg-background rounded-lg px-2 py-1 border border-border/50">
+                                            <Star className={cn("w-3 h-3", PRIORITY_COLORS[pi], pi === 0 ? "fill-current" : "")} />
+                                            <span className="font-medium text-foreground">{fmt12(p)}</span>
+                                          </div>
+                                        ))}
+                                      </div>
                                     </motion.div>
                                   ))}
                                 </div>

@@ -10,4 +10,7 @@ export interface CreateBookingRequest {
   timeSlotId: number;
   name: string;
   email: string;
+  priority1: string;
+  priority2: string;
+  priority3: string;
 }

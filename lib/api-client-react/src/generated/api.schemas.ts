@@ -36,6 +36,9 @@ export interface Booking {
   timeSlotLabel: string;
   name: string;
   email: string;
+  priority1: string;
+  priority2: string;
+  priority3: string;
   createdAt: string;
 }
 
@@ -43,6 +46,9 @@ export interface CreateBookingRequest {
   timeSlotId: number;
   name: string;
   email: string;
+  priority1: string;
+  priority2: string;
+  priority3: string;
 }
 
 export interface ErrorResponse {
