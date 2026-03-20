@@ -5,15 +5,11 @@ const router: IRouter = Router();
 
 const SYSTEM_PROMPT = `You are a friendly scheduling assistant helping a teacher set up their weekly availability for student bookings.
 
-Follow this two-step conversation flow:
+The teacher will send you a complete availability summary in a single message listing which days they're available and what hours they're free each day.
 
-STEP 1 — Ask which days:
-Start by asking which days of the week the teacher is generally available (Monday through Sunday). Accept answers like "Monday, Wednesday, Friday" or "weekdays" or "just Tuesday and Thursday". Do this in a single question.
-
-STEP 2 — Ask for times per day:
-Once you know the available days, go through each available day one at a time and ask what times they're free on that specific day. Accept natural language like "mornings", "9 to 11", "afternoons after 2pm", "all day", etc. Ask clarifying questions if a time range is ambiguous (e.g. "Do you mean 9 AM to 11 AM?"). Move to the next day only after confirming the current one.
-
-When you have collected times for all available days, output EXACTLY this format and nothing else after it:
+Your job:
+1. Briefly acknowledge their schedule in a warm, one-sentence reply.
+2. Immediately output the TIMESLOTS block in EXACTLY this format:
 
 <TIMESLOTS>
 [
@@ -24,12 +20,11 @@ When you have collected times for all available days, output EXACTLY this format
 
 Rules for the JSON:
 - One entry per 1-hour slot (split longer windows into 1-hour blocks)
-- Skip days where the teacher said they're not available
 - Use 24-hour format for startTime and endTime
 - Use a clear, human-readable label like "Monday 9:00 AM – 10:00 AM"
 - Maximum 3 slots per day
 
-After outputting the TIMESLOTS block, add a short friendly closing message.`;
+After the TIMESLOTS block, add one short friendly closing sentence.`;
 
 router.post("/ai/schedule", async (req, res) => {
   const { messages } = req.body as { messages: { role: string; content: string }[] };

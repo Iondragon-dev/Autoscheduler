@@ -10,7 +10,7 @@ import {
 import {
   Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft,
   AlertCircle, Calendar, ChevronDown, Mail, User, Sparkles, X,
-  Send, Bot, Loader2, CheckCircle2,
+  Bot, CheckCircle2, ArrowRight, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,19 +18,18 @@ import { cn } from "@/lib/utils";
 import { Link } from "wouter";
 
 interface NewSlotForm { label: string; startTime: string; endTime: string; }
-interface ChatMessage { role: "user" | "assistant"; content: string; }
 interface ParsedSlot { label: string; startTime: string; endTime: string; }
 
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const ALL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const DAY_SHORT: Record<string, string> = {
+  Monday: "Mon", Tuesday: "Tue", Wednesday: "Wed",
+  Thursday: "Thu", Friday: "Fri", Saturday: "Sat", Sunday: "Sun",
+};
 
 function parseSlotsFromResponse(text: string): ParsedSlot[] | null {
   const match = text.match(/<TIMESLOTS>([\s\S]*?)<\/TIMESLOTS>/);
   if (!match) return null;
-  try {
-    return JSON.parse(match[1].trim());
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(match[1].trim()); } catch { return null; }
 }
 
 function stripTimeslotBlock(text: string) {
@@ -38,103 +37,115 @@ function stripTimeslotBlock(text: string) {
 }
 
 function dayOfSlot(label: string): string {
-  for (const d of DAYS) if (label.startsWith(d)) return d;
+  for (const d of ALL_DAYS) if (label.startsWith(d)) return d;
   return "Other";
 }
 
-// ── AI Chat Popup ────────────────────────────────────────────────────────────
+// ── AI Assistant Popup ───────────────────────────────────────────────────────
+type WizardStep = "days" | "times" | "processing" | "confirm" | "done";
+
 function AiAssistant({ onSlotsCreated }: { onSlotsCreated: () => void }) {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
+  const [step, setStep] = useState<WizardStep>("days");
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  const [dayTimes, setDayTimes] = useState<Record<string, { start: string; end: string }>>({});
+  const [aiMessage, setAiMessage] = useState("");
   const [pendingSlots, setPendingSlots] = useState<ParsedSlot[] | null>(null);
   const [creating, setCreating] = useState(false);
-  const [done, setDone] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const createSlot = useCreateTimeSlot();
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to bottom on new message
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streaming]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [step, aiMessage]);
 
-  // Auto-focus input when opened
-  useEffect(() => {
-    if (open && !done) setTimeout(() => inputRef.current?.focus(), 100);
-  }, [open, done]);
+  function handleClose() {
+    setOpen(false);
+  }
 
-  // Send greeting on first open
-  useEffect(() => {
-    if (open && messages.length === 0) sendToAI([]);
-  }, [open]);
+  function handleOpen() {
+    // Reset on re-open if done
+    if (step === "done") {
+      setStep("days");
+      setSelectedDays([]);
+      setDayTimes({});
+      setAiMessage("");
+      setPendingSlots(null);
+    }
+    setOpen(true);
+  }
 
-  async function sendToAI(msgs: ChatMessage[]) {
-    setStreaming(true);
-    let full = "";
+  function toggleDay(day: string) {
+    setSelectedDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
+  }
+
+  function handleDaysContinue() {
+    if (selectedDays.length === 0) return;
+    // Init times for each selected day
+    const init: Record<string, { start: string; end: string }> = {};
+    for (const d of selectedDays) init[d] = { start: "09:00", end: "11:00" };
+    setDayTimes(init);
+    setStep("times");
+  }
+
+  async function handleSubmitSchedule() {
+    // Build summary message for AI
+    const orderedDays = ALL_DAYS.filter((d) => selectedDays.includes(d));
+    const summary = orderedDays
+      .map((d) => {
+        const t = dayTimes[d];
+        const fmtTime = (t: string) => {
+          const [h, m] = t.split(":").map(Number);
+          const ampm = h >= 12 ? "PM" : "AM";
+          const h12 = h % 12 || 12;
+          return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`;
+        };
+        return `${d}: ${fmtTime(t.start)} – ${fmtTime(t.end)}`;
+      })
+      .join(", ");
+
+    const userMessage = `I'm available on: ${summary}`;
+    setStep("processing");
+    setAiMessage("");
 
     try {
       const res = await fetch("/api/ai/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: msgs }),
+        body: JSON.stringify({ messages: [{ role: "user", content: userMessage }] }),
       });
 
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let assistantMsg = "";
-
-      setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+      let full = "";
 
       while (true) {
-        const { done: streamDone, value } = await reader.read();
-        if (streamDone) break;
+        const { done, value } = await reader.read();
+        if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           const data = JSON.parse(line.slice(6));
           if (data.content) {
-            assistantMsg += data.content;
-            full = assistantMsg;
-            setMessages((prev) => {
-              const copy = [...prev];
-              copy[copy.length - 1] = { role: "assistant", content: assistantMsg };
-              return copy;
-            });
+            full += data.content;
+            setAiMessage(full);
           }
         }
       }
+
+      const slots = parseSlotsFromResponse(full);
+      if (slots && slots.length > 0) {
+        setPendingSlots(slots);
+        setAiMessage(stripTimeslotBlock(full));
+      }
+      setStep("confirm");
     } catch {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Something went wrong. Please try again." }]);
+      setAiMessage("Something went wrong. Please try again.");
+      setStep("confirm");
     }
-
-    setStreaming(false);
-
-    // Check for time slots JSON
-    const slots = parseSlotsFromResponse(full);
-    if (slots && slots.length > 0) {
-      setPendingSlots(slots);
-      setMessages((prev) => {
-        const copy = [...prev];
-        const last = copy[copy.length - 1];
-        copy[copy.length - 1] = { ...last, content: stripTimeslotBlock(last.content) };
-        return copy;
-      });
-    }
-  }
-
-  async function handleSend() {
-    const text = input.trim();
-    if (!text || streaming) return;
-    setInput("");
-    const updated: ChatMessage[] = [...messages, { role: "user", content: text }];
-    setMessages(updated);
-    await sendToAI(updated);
   }
 
   async function handleCreateSlots() {
@@ -146,24 +157,19 @@ function AiAssistant({ onSlotsCreated }: { onSlotsCreated: () => void }) {
       );
     }
     setCreating(false);
-    setDone(true);
+    setStep("done");
     onSlotsCreated();
   }
 
-  function handleReset() {
-    setMessages([]);
-    setPendingSlots(null);
-    setDone(false);
-    setOpen(false);
-  }
+  const orderedSelected = ALL_DAYS.filter((d) => selectedDays.includes(d));
 
   return (
     <>
-      {/* Floating trigger button */}
+      {/* Trigger button */}
       <motion.button
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.97 }}
-        onClick={() => setOpen(true)}
+        onClick={handleOpen}
         className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-primary text-primary-foreground px-5 py-3 rounded-full shadow-xl font-semibold text-sm"
       >
         <Sparkles className="w-4 h-4" />
@@ -179,140 +185,270 @@ function AiAssistant({ onSlotsCreated }: { onSlotsCreated: () => void }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
-            onClick={() => setOpen(false)}
+            onClick={handleClose}
           />
         )}
       </AnimatePresence>
 
-      {/* Chat panel */}
+      {/* Panel */}
       <AnimatePresence>
         {open && (
           <motion.div
-            key="chat"
+            key="panel"
             initial={{ opacity: 0, y: 40, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 40, scale: 0.96 }}
-            transition={{ type: "spring", bounce: 0.25, duration: 0.4 }}
-            className="fixed bottom-24 right-6 z-50 w-[min(420px,calc(100vw-3rem))] h-[520px] bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden"
+            transition={{ type: "spring", bounce: 0.22, duration: 0.4 }}
+            className="fixed bottom-24 right-6 z-50 w-[min(440px,calc(100vw-3rem))] bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-primary/5">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-primary/5 shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/15">
+                <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center">
                   <Bot className="w-4 h-4 text-primary" />
                 </div>
                 <div>
                   <p className="text-sm font-bold text-foreground">Scheduling Assistant</p>
-                  <p className="text-xs text-muted-foreground">Powered by AI</p>
+                  <p className="text-xs text-muted-foreground">
+                    {step === "days" && "Step 1 of 2 — Pick your days"}
+                    {step === "times" && "Step 2 of 2 — Set your hours"}
+                    {step === "processing" && "Generating your schedule…"}
+                    {step === "confirm" && "Ready to add slots"}
+                    {step === "done" && "Schedule created!"}
+                  </p>
                 </div>
               </div>
-              <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+              <button onClick={handleClose} className="text-muted-foreground hover:text-foreground transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-              {messages.length === 0 && (
-                <div className="flex justify-center items-center h-full">
-                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-                </div>
-              )}
+            {/* Body */}
+            <div className="overflow-y-auto max-h-[480px]">
+              <AnimatePresence mode="wait">
 
-              {messages.map((msg, i) => (
-                <div key={i} className={cn("flex gap-2.5", msg.role === "user" ? "justify-end" : "justify-start")}>
-                  {msg.role === "assistant" && (
-                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                      <Bot className="w-3.5 h-3.5 text-primary" />
-                    </div>
-                  )}
-                  <div className={cn(
-                    "max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap",
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-br-sm"
-                      : "bg-muted text-foreground rounded-bl-sm"
-                  )}>
-                    {msg.content || (streaming && i === messages.length - 1 ? (
-                      <span className="flex gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "0ms" }} />
-                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "150ms" }} />
-                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "300ms" }} />
-                      </span>
-                    ) : "")}
-                  </div>
-                </div>
-              ))}
-
-              {/* Pending slots confirmation */}
-              {pendingSlots && !done && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-3"
-                >
-                  <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4 text-primary" />
-                    Ready to create {pendingSlots.length} time slot{pendingSlots.length !== 1 ? "s" : ""}
-                  </p>
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
-                    {pendingSlots.map((s, i) => (
-                      <div key={i} className="text-xs text-muted-foreground flex items-center gap-1.5">
-                        <Clock className="w-3 h-3 shrink-0" />
-                        {s.label}
-                      </div>
-                    ))}
-                  </div>
-                  <Button
-                    className="w-full"
-                    size="sm"
-                    onClick={handleCreateSlots}
-                    isLoading={creating}
+                {/* ── Step 1: Day checkboxes ── */}
+                {step === "days" && (
+                  <motion.div
+                    key="days"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="p-5 space-y-4"
                   >
-                    <CheckCircle2 className="w-4 h-4 mr-1.5" />
-                    Add These Slots
-                  </Button>
-                </motion.div>
-              )}
+                    <p className="text-sm text-foreground font-medium">Which days are you generally available?</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {ALL_DAYS.map((day) => {
+                        const checked = selectedDays.includes(day);
+                        return (
+                          <button
+                            key={day}
+                            onClick={() => toggleDay(day)}
+                            className={cn(
+                              "flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all",
+                              checked
+                                ? "bg-primary/10 border-primary text-primary"
+                                : "bg-muted/30 border-border text-foreground hover:bg-muted/60"
+                            )}
+                          >
+                            <div className={cn(
+                              "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
+                              checked ? "bg-primary border-primary" : "border-muted-foreground/40"
+                            )}>
+                              {checked && (
+                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12">
+                                  <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              )}
+                            </div>
+                            {day}
+                          </button>
+                        );
+                      })}
+                    </div>
 
-              {/* Success */}
-              {done && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="flex flex-col items-center py-6 text-center gap-3"
-                >
-                  <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
-                    <CheckCircle2 className="w-7 h-7 text-green-600" />
-                  </div>
-                  <p className="font-bold text-foreground">Slots Created!</p>
-                  <p className="text-sm text-muted-foreground">Your schedule is ready for student bookings.</p>
-                  <Button variant="outline" size="sm" onClick={handleReset}>Done</Button>
-                </motion.div>
-              )}
+                    {selectedDays.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {selectedDays.length} day{selectedDays.length !== 1 ? "s" : ""} selected
+                      </p>
+                    )}
 
+                    <Button
+                      className="w-full"
+                      onClick={handleDaysContinue}
+                      disabled={selectedDays.length === 0}
+                    >
+                      Continue
+                      <ArrowRight className="w-4 h-4 ml-1.5" />
+                    </Button>
+                  </motion.div>
+                )}
+
+                {/* ── Step 2: Time pickers ── */}
+                {step === "times" && (
+                  <motion.div
+                    key="times"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="p-5 space-y-4"
+                  >
+                    <p className="text-sm text-foreground font-medium">What hours are you free each day?</p>
+
+                    <div className="space-y-3">
+                      {orderedSelected.map((day) => (
+                        <div key={day} className="bg-muted/30 rounded-xl border border-border p-3">
+                          <div className="flex items-center gap-2 mb-2.5">
+                            <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                            <span className="text-sm font-semibold text-foreground">{day}</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs text-muted-foreground mb-1 font-medium">From</label>
+                              <input
+                                type="time"
+                                value={dayTimes[day]?.start ?? "09:00"}
+                                onChange={(e) =>
+                                  setDayTimes((prev) => ({
+                                    ...prev,
+                                    [day]: { ...prev[day], start: e.target.value },
+                                  }))
+                                }
+                                className="w-full text-sm bg-background border border-border rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-primary/30"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-muted-foreground mb-1 font-medium">To</label>
+                              <input
+                                type="time"
+                                value={dayTimes[day]?.end ?? "11:00"}
+                                onChange={(e) =>
+                                  setDayTimes((prev) => ({
+                                    ...prev,
+                                    [day]: { ...prev[day], end: e.target.value },
+                                  }))
+                                }
+                                className="w-full text-sm bg-background border border-border rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-primary/30"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <Button variant="outline" className="flex-1" onClick={() => setStep("days")}>
+                        Back
+                      </Button>
+                      <Button className="flex-1" onClick={handleSubmitSchedule}>
+                        Create My Schedule
+                        <Sparkles className="w-4 h-4 ml-1.5" />
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* ── Processing ── */}
+                {step === "processing" && (
+                  <motion.div
+                    key="processing"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="p-8 flex flex-col items-center text-center gap-4"
+                  >
+                    <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Loader2 className="w-7 h-7 text-primary animate-spin" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground">Building your schedule…</p>
+                      <p className="text-sm text-muted-foreground mt-1">The AI is organizing your time slots.</p>
+                    </div>
+                    {aiMessage && (
+                      <p className="text-sm text-muted-foreground bg-muted/40 rounded-xl px-4 py-3 text-left w-full whitespace-pre-wrap">{aiMessage}</p>
+                    )}
+                  </motion.div>
+                )}
+
+                {/* ── Confirm ── */}
+                {step === "confirm" && (
+                  <motion.div
+                    key="confirm"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-5 space-y-4"
+                  >
+                    {aiMessage && (
+                      <div className="flex gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                          <Bot className="w-3.5 h-3.5 text-primary" />
+                        </div>
+                        <p className="text-sm text-foreground bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 leading-relaxed">{aiMessage}</p>
+                      </div>
+                    )}
+
+                    {pendingSlots && pendingSlots.length > 0 ? (
+                      <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-3">
+                        <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                          <Calendar className="w-4 h-4 text-primary" />
+                          {pendingSlots.length} time slot{pendingSlots.length !== 1 ? "s" : ""} ready
+                        </p>
+                        <div className="space-y-1 max-h-36 overflow-y-auto">
+                          {pendingSlots.map((s, i) => (
+                            <div key={i} className="text-xs text-muted-foreground flex items-center gap-1.5">
+                              <Clock className="w-3 h-3 shrink-0 text-primary/60" />
+                              {s.label}
+                            </div>
+                          ))}
+                        </div>
+                        <Button className="w-full" onClick={handleCreateSlots} isLoading={creating}>
+                          <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                          Add These Slots
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="text-center py-4">
+                        <p className="text-sm text-muted-foreground">No slots could be generated. Please try again.</p>
+                        <Button variant="outline" size="sm" className="mt-3" onClick={() => setStep("days")}>
+                          Start Over
+                        </Button>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+
+                {/* ── Done ── */}
+                {step === "done" && (
+                  <motion.div
+                    key="done"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="p-8 flex flex-col items-center text-center gap-3"
+                  >
+                    <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+                      <CheckCircle2 className="w-7 h-7 text-green-600" />
+                    </div>
+                    <p className="font-bold text-foreground text-lg">Schedule Created!</p>
+                    <p className="text-sm text-muted-foreground">Your time slots are ready for student bookings.</p>
+                    <Button variant="outline" size="sm" onClick={handleClose}>Close</Button>
+                  </motion.div>
+                )}
+
+              </AnimatePresence>
               <div ref={bottomRef} />
             </div>
 
-            {/* Input */}
-            {!done && (
-              <div className="px-4 py-3 border-t border-border flex gap-2">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-                  placeholder="Tell me your availability..."
-                  disabled={streaming}
-                  className="flex-1 text-sm bg-muted/50 border border-border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-primary/30 placeholder:text-muted-foreground"
-                />
-                <button
-                  onClick={handleSend}
-                  disabled={!input.trim() || streaming}
-                  className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary text-primary-foreground disabled:opacity-40 transition-opacity shrink-0"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
+            {/* Progress dots */}
+            {(step === "days" || step === "times") && (
+              <div className="flex justify-center gap-1.5 py-3 border-t border-border shrink-0">
+                {(["days", "times"] as const).map((s) => (
+                  <div
+                    key={s}
+                    className={cn(
+                      "h-1.5 rounded-full transition-all",
+                      step === s ? "w-5 bg-primary" : "w-1.5 bg-muted-foreground/30"
+                    )}
+                  />
+                ))}
               </div>
             )}
           </motion.div>
@@ -328,7 +464,7 @@ function WeeklyCalendar() {
   const { data: bookings } = useGetBookings();
   const [expandedSlotId, setExpandedSlotId] = useState<number | null>(null);
 
-  const slotsByDay = DAYS.map((day) => ({
+  const slotsByDay = ALL_DAYS.map((day) => ({
     day,
     slots: (slots ?? []).filter((s) => dayOfSlot(s.label) === day),
   }));
@@ -357,23 +493,14 @@ function WeeklyCalendar() {
               )}>
                 <div className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-2.5">
-                    <div className={cn(
-                      "w-2.5 h-2.5 rounded-full shrink-0",
-                      daySlots.length > 0 ? "bg-primary" : "bg-muted-foreground/30"
-                    )} />
+                    <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", daySlots.length > 0 ? "bg-primary" : "bg-muted-foreground/30")} />
                     <span className="font-semibold text-sm text-foreground">{day}</span>
                   </div>
                   {daySlots.length > 0 ? (
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {daySlots.length} slot{daySlots.length !== 1 ? "s" : ""}
-                      </span>
+                      <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{daySlots.length} slot{daySlots.length !== 1 ? "s" : ""}</span>
                       {dayBookings.length > 0 && (
-                        <span className="flex items-center gap-1 text-primary font-medium">
-                          <Users className="w-3 h-3" />
-                          {dayBookings.length} booked
-                        </span>
+                        <span className="flex items-center gap-1 text-primary font-medium"><Users className="w-3 h-3" />{dayBookings.length} booked</span>
                       )}
                     </div>
                   ) : (
@@ -382,20 +509,22 @@ function WeeklyCalendar() {
                 </div>
 
                 {daySlots.length > 0 && (
-                  <div className="px-4 pb-3 flex flex-wrap gap-2">
+                  <div className="px-4 pb-3 space-y-2">
                     {daySlots.map((slot) => {
                       const slotBookings = bookingsForSlot(slot.id);
                       const isExpanded = expandedSlotId === slot.id;
                       return (
-                        <div key={slot.id} className="w-full">
+                        <div key={slot.id}>
                           <button
                             onClick={() => setExpandedSlotId(isExpanded ? null : slot.id)}
+                            disabled={slotBookings.length === 0}
                             className={cn(
                               "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs border transition-all",
                               slot.available
                                 ? "bg-primary/5 border-primary/20 hover:bg-primary/10"
                                 : "bg-muted/40 border-border opacity-60",
-                              isExpanded && "bg-primary/10 border-primary/30"
+                              isExpanded && "bg-primary/10 border-primary/30",
+                              slotBookings.length === 0 && "cursor-default"
                             )}
                           >
                             <div className="flex items-center gap-2">
@@ -405,38 +534,20 @@ function WeeklyCalendar() {
                             </div>
                             <div className="flex items-center gap-2">
                               {slotBookings.length > 0 && (
-                                <span className="flex items-center gap-1 text-primary font-semibold">
-                                  <Users className="w-3 h-3" />
-                                  {slotBookings.length}
-                                </span>
+                                <span className="flex items-center gap-1 text-primary font-semibold"><Users className="w-3 h-3" />{slotBookings.length}</span>
                               )}
                               {slotBookings.length > 0 && (
                                 <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground transition-transform", isExpanded && "rotate-180")} />
                               )}
                             </div>
                           </button>
-
                           <AnimatePresence>
                             {isExpanded && slotBookings.length > 0 && (
-                              <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: "auto", opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                transition={{ duration: 0.18 }}
-                                className="overflow-hidden"
-                              >
+                              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} className="overflow-hidden">
                                 <div className="mt-1 ml-4 space-y-1">
                                   {slotBookings.map((b, i) => (
-                                    <motion.div
-                                      key={b.id}
-                                      initial={{ opacity: 0, x: -4 }}
-                                      animate={{ opacity: 1, x: 0 }}
-                                      transition={{ delay: i * 0.04 }}
-                                      className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-muted/40 border border-border/50"
-                                    >
-                                      <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
-                                        {b.name.charAt(0).toUpperCase()}
-                                      </div>
+                                    <motion.div key={b.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }} className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-muted/40 border border-border/50">
+                                      <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">{b.name.charAt(0).toUpperCase()}</div>
                                       <div className="flex-1 min-w-0">
                                         <p className="text-xs font-semibold text-foreground truncate">{b.name}</p>
                                         <p className="text-xs text-muted-foreground truncate">{b.email}</p>
@@ -484,13 +595,7 @@ export default function Teacher() {
     setFormError(null);
     createSlot.mutate(
       { data: { label: form.label.trim(), startTime: form.startTime, endTime: form.endTime } },
-      {
-        onSuccess: () => {
-          setForm({ label: "", startTime: "", endTime: "" });
-          setShowAddForm(false);
-          refetchSlots();
-        },
-      }
+      { onSuccess: () => { setForm({ label: "", startTime: "", endTime: "" }); setShowAddForm(false); refetchSlots(); } }
     );
   };
 
@@ -509,23 +614,17 @@ export default function Teacher() {
     });
   };
 
-  const bookingsForSlot = (slotId: number) =>
-    (bookings ?? []).filter((b) => b.timeSlotId === slotId);
+  const bookingsForSlot = (slotId: number) => (bookings ?? []).filter((b) => b.timeSlotId === slotId);
 
   return (
     <div className="relative min-h-screen py-10 px-4 sm:px-6 lg:px-8 overflow-hidden">
-      <img
-        src={`${import.meta.env.BASE_URL}images/bg-mesh.png`}
-        alt=""
-        className="fixed inset-0 w-full h-full object-cover opacity-60 mix-blend-multiply pointer-events-none"
-      />
+      <img src={`${import.meta.env.BASE_URL}images/bg-mesh.png`} alt="" className="fixed inset-0 w-full h-full object-cover opacity-60 mix-blend-multiply pointer-events-none" />
 
       <div className="relative max-w-3xl mx-auto z-10 pb-24">
         {/* Header */}
         <div className="mb-8">
           <Link href="/" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors mb-6">
-            <ArrowLeft className="w-4 h-4 mr-1.5" />
-            Back to Student Booking
+            <ArrowLeft className="w-4 h-4 mr-1.5" />Back to Student Booking
           </Link>
           <h1 className="text-4xl font-display font-bold text-foreground mb-2">Teacher Area</h1>
           <p className="text-muted-foreground text-lg">Manage your schedule and view student bookings.</p>
@@ -539,21 +638,16 @@ export default function Teacher() {
               onClick={() => setTab(t)}
               className={cn(
                 "px-5 py-2 rounded-full text-sm font-semibold transition-all",
-                tab === t
-                  ? "bg-primary text-primary-foreground shadow"
-                  : "bg-card/80 text-muted-foreground hover:text-foreground border border-border"
+                tab === t ? "bg-primary text-primary-foreground shadow" : "bg-card/80 text-muted-foreground hover:text-foreground border border-border"
               )}
             >
               {t === "slots" ? (
                 <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" />Time Slots</span>
               ) : (
                 <span className="flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4" />
-                  Weekly Calendar
+                  <Calendar className="w-4 h-4" />Weekly Calendar
                   {(bookings?.length ?? 0) > 0 && (
-                    <span className="ml-1 bg-primary/20 text-primary text-xs px-1.5 py-0.5 rounded-full font-bold">
-                      {bookings?.length}
-                    </span>
+                    <span className="ml-1 bg-primary/20 text-primary text-xs px-1.5 py-0.5 rounded-full font-bold">{bookings?.length}</span>
                   )}
                 </span>
               )}
@@ -568,8 +662,7 @@ export default function Teacher() {
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-bold text-foreground text-lg">Available Slots</h2>
                   <Button size="sm" onClick={() => { setShowAddForm((v) => !v); setFormError(null); }} variant={showAddForm ? "outline" : "default"}>
-                    <Plus className="w-4 h-4 mr-1.5" />
-                    {showAddForm ? "Cancel" : "Add Slot"}
+                    <Plus className="w-4 h-4 mr-1.5" />{showAddForm ? "Cancel" : "Add Slot"}
                   </Button>
                 </div>
 
@@ -613,7 +706,6 @@ export default function Teacher() {
                       const isDeleting = deleteConfirmId === slot.id;
                       const isExpanded = expandedSlotId === slot.id;
                       const hasBookings = slotBookings.length > 0;
-
                       return (
                         <motion.div key={slot.id} layout initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className={cn("rounded-xl border overflow-hidden transition-all", slot.available ? "bg-card border-border" : "bg-muted/40 border-border opacity-70")}>
                           <div className="flex items-center p-4 gap-3">
@@ -625,8 +717,7 @@ export default function Teacher() {
                               <div className="text-xs text-muted-foreground flex items-center gap-3 mt-0.5">
                                 <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{slot.startTime} – {slot.endTime}</span>
                                 <span className={cn("flex items-center gap-1 font-medium", hasBookings ? "text-primary" : "text-muted-foreground")}>
-                                  <Users className="w-3 h-3" />
-                                  {slotBookings.length} {slotBookings.length === 1 ? "booking" : "bookings"}
+                                  <Users className="w-3 h-3" />{slotBookings.length} {slotBookings.length === 1 ? "booking" : "bookings"}
                                 </span>
                               </div>
                             </div>
@@ -647,7 +738,6 @@ export default function Teacher() {
                               )}
                             </div>
                           </div>
-
                           <AnimatePresence>
                             {isExpanded && hasBookings && (
                               <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
@@ -686,7 +776,6 @@ export default function Teacher() {
         </AnimatePresence>
       </div>
 
-      {/* AI Assistant floating button + chat */}
       <AiAssistant onSlotsCreated={() => { refetchSlots(); refetchBookings(); setTab("slots"); }} />
     </div>
   );
