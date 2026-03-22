@@ -286,7 +286,7 @@ export default function Home() {
                                           key={block.value}
                                           type="button"
                                           disabled={isPicked}
-                                          onClick={() => setValue(field, block.value, { shouldValidate: true })}
+                                          onClick={() => setValue(field, block.value, { shouldValidate: false })}
                                           className={cn(
                                             "flex flex-col items-center px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all duration-200",
                                             isActive

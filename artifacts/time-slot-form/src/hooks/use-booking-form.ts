@@ -2,7 +2,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
-const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+// Accepts both "HH:MM" and "HH:MM-HH:MM" (start-end range)
+const priorityPattern = /^([01]\d|2[0-3]):[0-5]\d(-([01]\d|2[0-3]):[0-5]\d)?$/;
 
 export const bookingSchema = z.object({
   timeSlotId: z.number({
@@ -11,9 +12,9 @@ export const bookingSchema = z.object({
   }),
   name: z.string().min(2, "Name must be at least 2 characters."),
   email: z.string().email("Please enter a valid email address."),
-  priority1: z.string().regex(timePattern, "Please enter a valid time."),
-  priority2: z.string().regex(timePattern, "Please enter a valid time."),
-  priority3: z.string().regex(timePattern, "Please enter a valid time."),
+  priority1: z.string().regex(priorityPattern, "Please select your 1st choice."),
+  priority2: z.string().regex(priorityPattern, "Please select your 2nd choice."),
+  priority3: z.string().regex(priorityPattern, "Please select your 3rd choice."),
 });
 
 export type BookingFormValues = z.infer<typeof bookingSchema>;
