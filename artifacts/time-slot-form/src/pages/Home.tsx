@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar, Clock, User, Mail, AlertCircle, ArrowRight, Star } from "lucide-react";
+import { Calendar, Clock, User, Mail, AlertCircle, ArrowRight, Star, X } from "lucide-react";
 import { useGetTimeSlots, useCreateBooking } from "@workspace/api-client-react";
-import type { Booking } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { Booking, TimeSlot } from "@workspace/api-client-react/src/generated/api.schemas";
 import { Link } from "wouter";
 
 import { useBookingForm } from "@/hooks/use-booking-form";
@@ -10,11 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const PRIORITY_META = [
-  { label: "1st Choice", sub: "Most preferred", starColor: "text-amber-400", fillStar: true, ring: "ring-amber-400/40", activeBg: "bg-amber-50 border-amber-400" },
-  { label: "2nd Choice", sub: "Second preference", starColor: "text-slate-400", fillStar: false, ring: "ring-slate-400/30", activeBg: "bg-slate-50 border-slate-400" },
-  { label: "3rd Choice", sub: "Third preference", starColor: "text-slate-300", fillStar: false, ring: "ring-slate-300/30", activeBg: "bg-slate-50/60 border-slate-300" },
-];
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const DURATIONS = [
   { mins: 15, label: "15 min" },
@@ -25,27 +21,41 @@ const DURATIONS = [
   { mins: 120, label: "2 hours" },
 ];
 
-function toMinutes(t: string) {
+const PRIORITY_META = [
+  { rank: 1, label: "1st Choice", starColor: "text-amber-400", fillStar: true, activeBg: "bg-amber-50 border-amber-400", badge: "bg-amber-400 text-white" },
+  { rank: 2, label: "2nd Choice", starColor: "text-slate-400", fillStar: false, activeBg: "bg-slate-50 border-slate-400", badge: "bg-slate-400 text-white" },
+  { rank: 3, label: "3rd Choice", starColor: "text-slate-300", fillStar: false, activeBg: "bg-slate-50/60 border-slate-300", badge: "bg-slate-300 text-white" },
+];
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function toMins(t: string) {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
 }
-
-function fromMinutes(mins: number) {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+function fromMins(m: number) {
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  return `${h.toString().padStart(2, "0")}:${min.toString().padStart(2, "0")}`;
 }
-
 function fmt12(t: string): string {
   if (!t) return "";
   const [h, m] = t.split(":").map(Number);
-  const ampm = h >= 12 ? "PM" : "AM";
-  return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ampm}`;
+  return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
 }
 
-/** Format a stored priority string ("HH:MM-HH:MM") for display */
-function fmtPriority(p: string): string {
-  if (!p) return "";
+/** Parse and display a stored priority string.
+ *  New format: "slotId|HH:MM-HH:MM"
+ *  Legacy format: "HH:MM-HH:MM" */
+export function fmtPriority(p: string, slots?: TimeSlot[]): string {
+  if (!p) return "—";
+  if (p.includes("|")) {
+    const [idStr, range] = p.split("|");
+    const slot = slots?.find((s) => s.id === Number(idStr));
+    const [s, e] = range.split("-");
+    const dayLabel = slot ? slot.label.split(" ")[0] : "";
+    return `${dayLabel ? dayLabel + " · " : ""}${fmt12(s)} – ${fmt12(e)}`;
+  }
   if (p.includes("-")) {
     const [s, e] = p.split("-");
     return `${fmt12(s)} – ${fmt12(e)}`;
@@ -53,41 +63,69 @@ function fmtPriority(p: string): string {
   return fmt12(p);
 }
 
-interface SubBlock { start: string; end: string; value: string; }
+/** Build "slotId|HH:MM-HH:MM" value string */
+function makeValue(slotId: number, start: string, end: string) {
+  return `${slotId}|${start}-${end}`;
+}
 
-function generateSubBlocks(startTime: string, endTime: string, stepMins: number): SubBlock[] {
-  const start = toMinutes(startTime);
-  const end = toMinutes(endTime);
-  const blocks: SubBlock[] = [];
+function getSubBlocks(slot: TimeSlot, stepMins: number) {
+  const start = toMins(slot.startTime);
+  const end = toMins(slot.endTime);
+  const blocks: { start: string; end: string; value: string }[] = [];
   for (let t = start; t + stepMins <= end; t += stepMins) {
-    const s = fromMinutes(t);
-    const e = fromMinutes(t + stepMins);
-    blocks.push({ start: s, end: e, value: `${s}-${e}` });
+    const s = fromMins(t);
+    const e = fromMins(t + stepMins);
+    blocks.push({ start: s, end: e, value: makeValue(slot.id, s, e) });
   }
   return blocks;
 }
 
+// ─── Component ───────────────────────────────────────────────────────────────
+
 export default function Home() {
   const { data: slots, isLoading: isLoadingSlots, isError: isSlotsError } = useGetTimeSlots();
   const createBooking = useCreateBooking();
+
   const [durationMins, setDurationMins] = useState(60);
+  const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
 
   const form = useBookingForm();
   const { register, handleSubmit, formState: { errors }, watch, setValue } = form;
 
-  const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
-
-  const selectedSlotId = watch("timeSlotId");
-  const priority1 = watch("priority1");
-  const priority2 = watch("priority2");
-  const priority3 = watch("priority3");
-  const priorities = [priority1, priority2, priority3];
+  const p1 = watch("priority1");
+  const p2 = watch("priority2");
+  const p3 = watch("priority3");
+  const priorities = [p1, p2, p3];
   const priorityFields = ["priority1", "priority2", "priority3"] as const;
 
-  const selectedSlot = slots?.find((s) => s.id === selectedSlotId);
-  const subBlocks = selectedSlot
-    ? generateSubBlocks(selectedSlot.startTime, selectedSlot.endTime, durationMins)
-    : [];
+  const availableSlots = slots?.filter((s) => s.available) ?? [];
+
+  // Which priority index to fill next (0, 1, or 2; or null if all filled)
+  const nextSlot = priorities.findIndex((p) => !p);
+
+  const handleBlockClick = useCallback((value: string, slotId: number) => {
+    const existingIdx = priorities.indexOf(value);
+    if (existingIdx !== -1) {
+      // Deselect: clear this priority, shift subsequent ones down
+      const updated = [...priorities];
+      updated.splice(existingIdx, 1);
+      updated.push("");
+      priorityFields.forEach((f, i) => setValue(f, updated[i] ?? "", { shouldValidate: false }));
+      // Update timeSlotId from new priority1
+      const newP1 = updated[0];
+      if (newP1) {
+        const newSlotId = Number(newP1.split("|")[0]);
+        setValue("timeSlotId", newSlotId, { shouldValidate: false });
+      }
+    } else if (nextSlot !== -1) {
+      // Assign to next open slot
+      setValue(priorityFields[nextSlot], value, { shouldValidate: false });
+      // Keep timeSlotId in sync with priority1's slot
+      if (nextSlot === 0) {
+        setValue("timeSlotId", slotId, { shouldValidate: false });
+      }
+    }
+  }, [priorities, nextSlot, setValue]);
 
   const onSubmit = (values: any) => {
     createBooking.mutate(
@@ -100,6 +138,8 @@ export default function Home() {
       }
     );
   };
+
+  const allFilled = priorities.every(Boolean);
 
   return (
     <div className="relative min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 overflow-hidden">
@@ -123,245 +163,215 @@ export default function Home() {
               <div className="mb-10 text-center">
                 <h1 className="text-4xl font-display font-bold text-foreground mb-3">Book a Session</h1>
                 <p className="text-lg text-muted-foreground">
-                  Pick a block, choose your session length, then rank your three preferred times.
+                  Choose a session length, then pick your 3 preferred times from any available day.
                 </p>
               </div>
 
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-10">
 
-                {/* Step 1: Select block */}
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-2 text-foreground mb-4">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">1</div>
-                    <h2 className="text-xl font-bold font-display">Choose a Time Block</h2>
+                {/* Step 1: Duration */}
+                <div>
+                  <div className="flex items-center space-x-2 mb-4">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">1</div>
+                    <h2 className="text-xl font-bold font-display">Session Length</h2>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {DURATIONS.map(({ mins, label }) => (
+                      <button
+                        key={mins}
+                        type="button"
+                        onClick={() => {
+                          setDurationMins(mins);
+                          priorityFields.forEach((f) => setValue(f, "", { shouldValidate: false }));
+                        }}
+                        className={cn(
+                          "px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all",
+                          durationMins === mins
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 text-foreground"
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="h-px w-full bg-gradient-to-r from-transparent via-border to-transparent" />
+
+                {/* Step 2: Ranked preference picking */}
+                <div>
+                  <div className="flex items-center space-x-2 mb-1">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">2</div>
+                    <h2 className="text-xl font-bold font-display">Rank Your Preferred Times</h2>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-5 ml-10">
+                    Pick 3 time slots from any day — tap a slot to select it, tap again to remove it.
+                  </p>
+
+                  {/* Priority summary chips */}
+                  <div className="flex flex-wrap gap-2 mb-6">
+                    {PRIORITY_META.map((meta, i) => {
+                      const val = priorities[i];
+                      return (
+                        <div
+                          key={i}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all",
+                            val
+                              ? "border-transparent bg-primary/10 text-primary"
+                              : i === nextSlot
+                              ? "border-primary/40 bg-primary/5 text-primary/60 animate-pulse"
+                              : "border-border/40 bg-muted/30 text-muted-foreground/50"
+                          )}
+                        >
+                          <Star className={cn("w-3 h-3", meta.starColor, meta.fillStar ? "fill-current" : "")} />
+                          {meta.label}
+                          {val && (
+                            <span className="ml-1 text-foreground/70 font-normal">
+                              {fmtPriority(val, availableSlots)}
+                            </span>
+                          )}
+                          {val && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...priorities];
+                                updated.splice(i, 1);
+                                updated.push("");
+                                priorityFields.forEach((f, j) => setValue(f, updated[j] ?? "", { shouldValidate: false }));
+                                if (i === 0) {
+                                  const newP1 = updated[0];
+                                  if (newP1) setValue("timeSlotId", Number(newP1.split("|")[0]), { shouldValidate: false });
+                                }
+                              }}
+                              className="ml-0.5 text-muted-foreground hover:text-foreground"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
 
+                  {/* Slots with sub-blocks */}
                   {isLoadingSlots ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {[1, 2, 3, 4].map((i) => <div key={i} className="h-[88px] rounded-xl bg-muted/60 animate-pulse" />)}
+                    <div className="space-y-4">
+                      {[1, 2, 3].map((i) => <div key={i} className="h-24 rounded-xl bg-muted/60 animate-pulse" />)}
                     </div>
                   ) : isSlotsError ? (
                     <div className="p-6 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-center flex flex-col items-center">
                       <AlertCircle className="w-8 h-8 mb-2" />
-                      <p>Failed to load time blocks. Please try refreshing.</p>
+                      <p>Failed to load available times. Please try refreshing.</p>
                     </div>
-                  ) : slots?.filter(s => s.available).length === 0 ? (
+                  ) : availableSlots.length === 0 ? (
                     <div className="p-8 rounded-xl border-2 border-dashed border-border text-center text-muted-foreground">
                       No time blocks available right now. Please check back later.
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {slots?.filter(s => s.available).map((slot) => {
-                        const isSelected = selectedSlotId === slot.id;
+                    <div className="space-y-4">
+                      {availableSlots.map((slot) => {
+                        const subBlocks = getSubBlocks(slot, durationMins);
+                        if (subBlocks.length === 0) return null;
+
                         return (
-                          <button
-                            type="button"
-                            key={slot.id}
-                            onClick={() => {
-                              setValue("timeSlotId", slot.id, { shouldValidate: true });
-                              setValue("priority1", "", { shouldValidate: false });
-                              setValue("priority2", "", { shouldValidate: false });
-                              setValue("priority3", "", { shouldValidate: false });
-                            }}
-                            className={cn(
-                              "relative flex flex-col p-4 rounded-xl border-2 text-left transition-all duration-300 ease-out outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
-                              isSelected
-                                ? "border-primary bg-primary/5 shadow-md shadow-primary/10 scale-[1.02]"
-                                : "border-border hover:border-primary/30 hover:bg-muted/30 bg-card"
-                            )}
-                          >
-                            <div className="flex items-center justify-between w-full mb-1">
-                              <span className={cn("font-semibold", isSelected ? "text-primary" : "text-foreground")}>
-                                {slot.label}
+                          <div key={slot.id} className="rounded-xl border border-border bg-card/60 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Calendar className="w-4 h-4 text-muted-foreground" />
+                              <span className="text-sm font-semibold text-foreground">{slot.label}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
                               </span>
-                              {isSelected && (
-                                <motion.div layoutId="active-indicator" className="w-2.5 h-2.5 rounded-full bg-primary" />
-                              )}
                             </div>
-                            <div className="flex items-center text-sm text-muted-foreground">
-                              <Clock className="w-3.5 h-3.5 mr-1.5" />
-                              {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
+
+                            <div className="flex flex-wrap gap-2">
+                              {subBlocks.map((block) => {
+                                const assignedIdx = priorities.indexOf(block.value);
+                                const isAssigned = assignedIdx !== -1;
+                                const meta = isAssigned ? PRIORITY_META[assignedIdx] : null;
+                                const canSelect = !isAssigned && nextSlot !== -1;
+
+                                return (
+                                  <button
+                                    key={block.value}
+                                    type="button"
+                                    disabled={!isAssigned && nextSlot === -1}
+                                    onClick={() => handleBlockClick(block.value, slot.id)}
+                                    className={cn(
+                                      "relative flex flex-col items-center px-3 py-2 rounded-xl border-2 text-xs font-medium transition-all duration-200 min-w-[72px]",
+                                      isAssigned
+                                        ? `${meta!.activeBg} shadow-sm scale-[1.04]`
+                                        : canSelect
+                                        ? "border-border bg-card hover:border-primary/50 hover:bg-primary/5 text-foreground cursor-pointer"
+                                        : "border-border/30 bg-muted/20 text-muted-foreground/40 cursor-not-allowed"
+                                    )}
+                                  >
+                                    {isAssigned && (
+                                      <span className={cn("absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow", meta!.badge)}>
+                                        {assignedIdx + 1}
+                                      </span>
+                                    )}
+                                    <span className="font-semibold">{fmt12(block.start)}</span>
+                                    <span className={cn("text-[10px]", isAssigned ? "text-current/70" : "text-muted-foreground")}>
+                                      – {fmt12(block.end)}
+                                    </span>
+                                  </button>
+                                );
+                              })}
                             </div>
-                          </button>
+                          </div>
                         );
                       })}
+
+                      {availableSlots.every((s) => getSubBlocks(s, durationMins).length === 0) && (
+                        <div className="p-4 rounded-xl bg-muted/30 border border-border text-sm text-muted-foreground text-center">
+                          No available blocks fit a {DURATIONS.find(d => d.mins === durationMins)?.label} session. Try a shorter duration.
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {errors.timeSlotId && (
-                    <p className="text-sm font-medium text-destructive flex items-center mt-2">
-                      <AlertCircle className="w-4 h-4 mr-1.5" />
-                      {errors.timeSlotId.message}
+                  {/* Priority validation errors */}
+                  {(errors.priority1 || errors.priority2 || errors.priority3) && (
+                    <p className="text-sm font-medium text-destructive flex items-center gap-1 mt-3">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      Please select all 3 preferred times before submitting.
                     </p>
                   )}
                 </div>
 
-                {/* Step 2: Duration + priority blocks (only after block selected) */}
-                <AnimatePresence>
-                  {selectedSlot && (
-                    <motion.div
-                      key="priorities"
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.3 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="h-px w-full bg-gradient-to-r from-transparent via-border to-transparent mb-10" />
-                      <div className="space-y-8">
-
-                        {/* Duration selector */}
-                        <div>
-                          <div className="flex items-center space-x-2 text-foreground mb-4">
-                            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">2</div>
-                            <h2 className="text-xl font-bold font-display">Session Length</h2>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {DURATIONS.map(({ mins, label }) => {
-                              const fits = selectedSlot
-                                ? toMinutes(selectedSlot.endTime) - toMinutes(selectedSlot.startTime) >= mins
-                                : true;
-                              const active = durationMins === mins;
-                              return (
-                                <button
-                                  key={mins}
-                                  type="button"
-                                  disabled={!fits}
-                                  onClick={() => {
-                                    setDurationMins(mins);
-                                    setValue("priority1", "", { shouldValidate: false });
-                                    setValue("priority2", "", { shouldValidate: false });
-                                    setValue("priority3", "", { shouldValidate: false });
-                                  }}
-                                  className={cn(
-                                    "px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all",
-                                    active
-                                      ? "border-primary bg-primary/10 text-primary"
-                                      : fits
-                                      ? "border-border bg-card hover:border-primary/40 hover:bg-primary/5 text-foreground"
-                                      : "border-border/30 bg-muted/20 text-muted-foreground/40 cursor-not-allowed"
-                                  )}
-                                >
-                                  {label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Priority block pickers */}
-                        {subBlocks.length > 0 ? (
-                          <div className="space-y-6">
-                            <div className="flex items-center space-x-2 text-foreground">
-                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">3</div>
-                              <div>
-                                <h2 className="text-xl font-bold font-display">Rank Your Preferred Times</h2>
-                                <p className="text-sm text-muted-foreground">Select one block per preference.</p>
-                              </div>
-                            </div>
-
-                            {PRIORITY_META.map((meta, pi) => {
-                              const field = priorityFields[pi];
-                              const selected = priorities[pi];
-                              const otherPicks = priorities.filter((_, oi) => oi !== pi);
-
-                              return (
-                                <div key={pi} className="space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    <Star className={cn("w-4 h-4", meta.starColor, meta.fillStar ? "fill-current" : "")} />
-                                    <span className="text-sm font-semibold text-foreground">{meta.label}</span>
-                                    <span className="text-xs text-muted-foreground">{meta.sub}</span>
-                                    {selected && (
-                                      <span className="ml-auto text-xs font-semibold text-primary">{fmtPriority(selected)}</span>
-                                    )}
-                                  </div>
-
-                                  <div className="flex flex-wrap gap-2">
-                                    {subBlocks.map((block) => {
-                                      const isActive = selected === block.value;
-                                      const isPicked = otherPicks.includes(block.value);
-
-                                      return (
-                                        <button
-                                          key={block.value}
-                                          type="button"
-                                          disabled={isPicked}
-                                          onClick={() => setValue(field, block.value, { shouldValidate: false })}
-                                          className={cn(
-                                            "flex flex-col items-center px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all duration-200",
-                                            isActive
-                                              ? `${meta.activeBg} shadow-sm ring-2 ${meta.ring} scale-[1.04]`
-                                              : isPicked
-                                              ? "border-border/40 bg-muted/20 text-muted-foreground/40 cursor-not-allowed"
-                                              : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 text-foreground cursor-pointer"
-                                          )}
-                                        >
-                                          <Clock className={cn("w-3 h-3 mb-1", isActive ? "text-current" : "text-muted-foreground")} />
-                                          <span className="text-xs font-semibold">{fmt12(block.start)}</span>
-                                          <span className={cn("text-[10px]", isActive ? "text-current/70" : "text-muted-foreground")}>
-                                            – {fmt12(block.end)}
-                                          </span>
-                                          {isPicked && <span className="text-[9px] mt-0.5 text-muted-foreground/50">Taken</span>}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-
-                                  {errors[field] && (
-                                    <p className="text-xs font-medium text-destructive flex items-center gap-1">
-                                      <AlertCircle className="w-3 h-3" />
-                                      Please select a time for your {meta.label.toLowerCase()}.
-                                    </p>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="p-4 rounded-xl bg-muted/30 border border-border text-sm text-muted-foreground text-center">
-                            The selected duration doesn't fit within this block. Try a shorter session length.
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
                 <div className="h-px w-full bg-gradient-to-r from-transparent via-border to-transparent" />
 
-                {/* Personal Details */}
-                <div className="space-y-6">
-                  <div className="flex items-center space-x-2 text-foreground mb-4">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">
-                      {selectedSlot ? "4" : "2"}
-                    </div>
+                {/* Step 3: Personal Details */}
+                <div className="space-y-5">
+                  <div className="flex items-center space-x-2 mb-4">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">3</div>
                     <h2 className="text-xl font-bold font-display">Your Details</h2>
                   </div>
 
-                  <div className="space-y-5">
-                    <div>
-                      <label className="block text-sm font-semibold text-foreground mb-2 flex items-center">
-                        <User className="w-4 h-4 mr-2 text-muted-foreground" />Full Name
-                      </label>
-                      <Input placeholder="Jane Doe" {...register("name")} error={!!errors.name} />
-                      {errors.name && (
-                        <p className="text-sm font-medium text-destructive mt-1.5 flex items-center">
-                          <AlertCircle className="w-4 h-4 mr-1.5" />{errors.name.message}
-                        </p>
-                      )}
-                    </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+                      <User className="w-4 h-4 text-muted-foreground" />Full Name
+                    </label>
+                    <Input placeholder="Jane Doe" {...register("name")} error={!!errors.name} />
+                    {errors.name && (
+                      <p className="text-sm font-medium text-destructive mt-1.5 flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />{errors.name.message}
+                      </p>
+                    )}
+                  </div>
 
-                    <div>
-                      <label className="block text-sm font-semibold text-foreground mb-2 flex items-center">
-                        <Mail className="w-4 h-4 mr-2 text-muted-foreground" />Email Address
-                      </label>
-                      <Input type="email" placeholder="jane@example.com" {...register("email")} error={!!errors.email} />
-                      {errors.email && (
-                        <p className="text-sm font-medium text-destructive mt-1.5 flex items-center">
-                          <AlertCircle className="w-4 h-4 mr-1.5" />{errors.email.message}
-                        </p>
-                      )}
-                    </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-muted-foreground" />Email Address
+                    </label>
+                    <Input type="email" placeholder="jane@example.com" {...register("email")} error={!!errors.email} />
+                    {errors.email && (
+                      <p className="text-sm font-medium text-destructive mt-1.5 flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />{errors.email.message}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -371,17 +381,16 @@ export default function Home() {
                   </div>
                 )}
 
-                <div className="pt-4">
-                  <Button type="submit" className="w-full text-lg h-14" isLoading={createBooking.isPending}>
-                    Submit Request
-                    <ArrowRight className="w-5 h-5 ml-2" />
-                  </Button>
-                  <p className="text-center text-sm text-muted-foreground mt-4">
-                    The teacher will confirm a time based on your preferences.
-                  </p>
-                </div>
+                <Button type="submit" className="w-full text-lg h-14" isLoading={createBooking.isPending} disabled={!allFilled}>
+                  Submit Request
+                  <ArrowRight className="w-5 h-5 ml-2" />
+                </Button>
+                <p className="text-center text-sm text-muted-foreground -mt-6">
+                  The teacher will confirm a time based on your preferences.
+                </p>
               </form>
             </motion.div>
+
           ) : (
             <motion.div
               key="success-view"
@@ -390,7 +399,7 @@ export default function Home() {
               transition={{ duration: 0.5, type: "spring", bounce: 0.4 }}
               className="bg-card/80 backdrop-blur-2xl rounded-[2rem] shadow-2xl shadow-black/5 border border-white/50 p-8 sm:p-12 text-center"
             >
-              <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2, duration: 0.6 }}>
+              <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
                 <img src={`${import.meta.env.BASE_URL}images/success-calendar.png`} alt="Request Sent" className="w-40 h-40 mx-auto mb-8 drop-shadow-2xl" />
               </motion.div>
 
@@ -399,28 +408,23 @@ export default function Home() {
               </motion.h2>
 
               <motion.p initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }} className="text-lg text-muted-foreground mb-8">
-                Thanks, <span className="font-semibold text-foreground">{confirmedBooking.name}</span>! Your preferences have been recorded — the teacher will confirm your session.
+                Thanks, <span className="font-semibold text-foreground">{confirmedBooking.name}</span>! Your preferences have been recorded.
               </motion.p>
 
               <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5 }} className="bg-white rounded-2xl p-6 shadow-sm border border-border/50 text-left max-w-sm mx-auto space-y-4">
-                <div>
-                  <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold mb-1">Time Block</div>
-                  <div className="flex items-center text-foreground font-semibold text-lg">
-                    <Calendar className="w-5 h-5 mr-2 text-primary" />{confirmedBooking.timeSlotLabel}
-                  </div>
-                </div>
-                <div className="border-t border-border/50 pt-4">
+                <div className="border-b border-border/50 pb-4">
                   <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold mb-2">Your Time Preferences</div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     {[
                       { p: confirmedBooking.priority1, meta: PRIORITY_META[0] },
                       { p: confirmedBooking.priority2, meta: PRIORITY_META[1] },
                       { p: confirmedBooking.priority3, meta: PRIORITY_META[2] },
                     ].map(({ p, meta }, i) => (
                       <div key={i} className="flex items-center gap-2 text-sm">
-                        <Star className={cn("w-3.5 h-3.5 shrink-0", meta.starColor, meta.fillStar ? "fill-current" : "")} />
-                        <span className="text-muted-foreground text-xs w-16 font-medium">{meta.label}</span>
-                        <span className="font-semibold text-foreground">{fmtPriority(p)}</span>
+                        <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0", meta.badge)}>
+                          {i + 1}
+                        </span>
+                        <span className="font-semibold text-foreground">{fmtPriority(p, availableSlots)}</span>
                       </div>
                     ))}
                   </div>

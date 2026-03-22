@@ -2,13 +2,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
-// Accepts both "HH:MM" and "HH:MM-HH:MM" (start-end range)
-const priorityPattern = /^([01]\d|2[0-3]):[0-5]\d(-([01]\d|2[0-3]):[0-5]\d)?$/;
+// Accepts "slotId|HH:MM-HH:MM" (new multi-day format) or legacy "HH:MM-HH:MM"
+const priorityPattern = /^(\d+\|)?([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/;
 
 export const bookingSchema = z.object({
   timeSlotId: z.number({
-    required_error: "Please select a time block above.",
-    invalid_type_error: "Please select a time block above.",
+    required_error: "Could not determine time block.",
+    invalid_type_error: "Could not determine time block.",
   }),
   name: z.string().min(2, "Name must be at least 2 characters."),
   email: z.string().email("Please enter a valid email address."),

@@ -34,9 +34,20 @@ function fmt12(time24: string): string {
   return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 
-/** Display a priority value — handles both "HH:MM" and "HH:MM-HH:MM" */
-function fmtPriority(p: string): string {
+/** Display a priority value.
+ *  New format: "slotId|HH:MM-HH:MM"  →  "Monday · 9:00 AM – 10:00 AM"
+ *  Legacy:     "HH:MM-HH:MM"         →  "9:00 AM – 10:00 AM"
+ *  Bare:       "HH:MM"               →  "9:00 AM"
+ */
+function fmtPriority(p: string, slots?: { id: number; label: string }[]): string {
   if (!p) return "—";
+  if (p.includes("|")) {
+    const [idStr, range] = p.split("|");
+    const slot = slots?.find((s) => s.id === Number(idStr));
+    const [s, e] = range.split("-");
+    const day = slot ? slot.label.split(" ")[0] : "";
+    return `${day ? day + " · " : ""}${fmt12(s)} – ${fmt12(e)}`;
+  }
   if (p.includes("-")) {
     const [s, e] = p.split("-");
     return `${fmt12(s)} – ${fmt12(e)}`;
@@ -578,7 +589,7 @@ function WeeklyCalendar() {
                                         {[b.priority1, b.priority2, b.priority3].map((p, pi) => (
                                           <div key={pi} className="flex items-center gap-1 text-xs bg-background rounded-md px-1.5 py-0.5 border border-border/50">
                                             <Star className={cn("w-2.5 h-2.5", PRIORITY_COLORS[pi], pi === 0 ? "fill-current" : "")} />
-                                            <span className="font-medium">{fmtPriority(p)}</span>
+                                            <span className="font-medium">{fmtPriority(p, slots)}</span>
                                           </div>
                                         ))}
                                       </div>
@@ -788,7 +799,7 @@ export default function Teacher() {
                                         {[b.priority1, b.priority2, b.priority3].map((p, pi) => (
                                           <div key={pi} className="flex items-center gap-1 text-xs bg-background rounded-lg px-2 py-1 border border-border/50">
                                             <Star className={cn("w-3 h-3", PRIORITY_COLORS[pi], pi === 0 ? "fill-current" : "")} />
-                                            <span className="font-medium text-foreground">{fmtPriority(p)}</span>
+                                            <span className="font-medium text-foreground">{fmtPriority(p, slots)}</span>
                                           </div>
                                         ))}
                                       </div>
