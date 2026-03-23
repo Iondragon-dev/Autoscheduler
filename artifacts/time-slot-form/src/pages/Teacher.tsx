@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
 import { signOutTeacher } from "./TeacherGate";
+import { fmt12, fmtPriority } from "@/lib/booking-utils";
 
 interface NewSlotForm { label: string; startTime: string; endTime: string; }
 interface ParsedSlot { label: string; startTime: string; endTime: string; }
@@ -26,35 +27,6 @@ const DAY_SHORT: Record<string, string> = {
   Monday: "Mon", Tuesday: "Tue", Wednesday: "Wed",
   Thursday: "Thu", Friday: "Fri", Saturday: "Sat", Sunday: "Sun",
 };
-
-function fmt12(time24: string): string {
-  if (!time24) return "—";
-  const [h, m] = time24.split(":").map(Number);
-  const ampm = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 || 12;
-  return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`;
-}
-
-/** Display a priority value.
- *  New format: "slotId|HH:MM-HH:MM"  →  "Monday · 9:00 AM – 10:00 AM"
- *  Legacy:     "HH:MM-HH:MM"         →  "9:00 AM – 10:00 AM"
- *  Bare:       "HH:MM"               →  "9:00 AM"
- */
-function fmtPriority(p: string, slots?: { id: number; label: string }[]): string {
-  if (!p) return "—";
-  if (p.includes("|")) {
-    const [idStr, range] = p.split("|");
-    const slot = slots?.find((s) => s.id === Number(idStr));
-    const [s, e] = range.split("-");
-    const day = slot ? slot.label.split(" ")[0] : "";
-    return `${day ? day + " · " : ""}${fmt12(s)} – ${fmt12(e)}`;
-  }
-  if (p.includes("-")) {
-    const [s, e] = p.split("-");
-    return `${fmt12(s)} – ${fmt12(e)}`;
-  }
-  return fmt12(p);
-}
 
 const PRIORITY_COLORS = ["text-amber-500", "text-slate-500", "text-slate-400"];
 

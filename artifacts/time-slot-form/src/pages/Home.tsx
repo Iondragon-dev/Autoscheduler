@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Calendar, Clock, User, Mail, AlertCircle, ArrowRight, Star, X } from "lucide-react";
 import { useGetTimeSlots, useCreateBooking } from "@workspace/api-client-react";
@@ -9,6 +9,7 @@ import { useBookingForm } from "@/hooks/use-booking-form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { fmt12, fmtPriority, getSubBlocks } from "@/lib/booking-utils";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -27,59 +28,6 @@ const PRIORITY_META = [
   { rank: 3, label: "3rd Choice", starColor: "text-slate-300", fillStar: false, activeBg: "bg-slate-50/60 border-slate-300", badge: "bg-slate-300 text-white" },
 ];
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function toMins(t: string) {
-  const [h, m] = t.split(":").map(Number);
-  return h * 60 + m;
-}
-function fromMins(m: number) {
-  const h = Math.floor(m / 60);
-  const min = m % 60;
-  return `${h.toString().padStart(2, "0")}:${min.toString().padStart(2, "0")}`;
-}
-function fmt12(t: string): string {
-  if (!t) return "";
-  const [h, m] = t.split(":").map(Number);
-  return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
-}
-
-/** Parse and display a stored priority string.
- *  New format: "slotId|HH:MM-HH:MM"
- *  Legacy format: "HH:MM-HH:MM" */
-export function fmtPriority(p: string, slots?: TimeSlot[]): string {
-  if (!p) return "—";
-  if (p.includes("|")) {
-    const [idStr, range] = p.split("|");
-    const slot = slots?.find((s) => s.id === Number(idStr));
-    const [s, e] = range.split("-");
-    const dayLabel = slot ? slot.label.split(" ")[0] : "";
-    return `${dayLabel ? dayLabel + " · " : ""}${fmt12(s)} – ${fmt12(e)}`;
-  }
-  if (p.includes("-")) {
-    const [s, e] = p.split("-");
-    return `${fmt12(s)} – ${fmt12(e)}`;
-  }
-  return fmt12(p);
-}
-
-/** Build "slotId|HH:MM-HH:MM" value string */
-function makeValue(slotId: number, start: string, end: string) {
-  return `${slotId}|${start}-${end}`;
-}
-
-function getSubBlocks(slot: TimeSlot, stepMins: number) {
-  const start = toMins(slot.startTime);
-  const end = toMins(slot.endTime);
-  const blocks: { start: string; end: string; value: string }[] = [];
-  for (let t = start; t + stepMins <= end; t += stepMins) {
-    const s = fromMins(t);
-    const e = fromMins(t + stepMins);
-    blocks.push({ start: s, end: e, value: makeValue(slot.id, s, e) });
-  }
-  return blocks;
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -87,6 +35,7 @@ export default function Home() {
   const createBooking = useCreateBooking();
 
   const [durationMins, setDurationMins] = useState(60);
+  const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
 
   const form = useBookingForm();
@@ -99,6 +48,18 @@ export default function Home() {
   const priorityFields = ["priority1", "priority2", "priority3"] as const;
 
   const availableSlots = slots?.filter((s) => s.available) ?? [];
+
+  // Slots that actually have sub-blocks for the current duration
+  const slotsWithBlocks = availableSlots.filter((s) => getSubBlocks(s, durationMins).length > 0);
+
+  // Auto-select first available day when slots load or duration changes
+  useEffect(() => {
+    if (slotsWithBlocks.length === 0) { setSelectedSlotId(null); return; }
+    const ids = slotsWithBlocks.map((s) => s.id);
+    if (selectedSlotId === null || !ids.includes(selectedSlotId)) {
+      setSelectedSlotId(ids[0]);
+    }
+  }, [slotsWithBlocks.map((s) => s.id).join(","), durationMins]);
 
   // Which priority index to fill next (0, 1, or 2; or null if all filled)
   const nextSlot = priorities.findIndex((p) => !p);
@@ -261,43 +222,77 @@ export default function Home() {
                     })}
                   </div>
 
-                  {/* Slots with sub-blocks */}
+                  {/* Slots: day picker then sub-blocks */}
                   {isLoadingSlots ? (
-                    <div className="space-y-4">
-                      {[1, 2, 3].map((i) => <div key={i} className="h-24 rounded-xl bg-muted/60 animate-pulse" />)}
+                    <div className="flex gap-2">
+                      {[1, 2, 3].map((i) => <div key={i} className="h-10 w-28 rounded-xl bg-muted/60 animate-pulse" />)}
                     </div>
                   ) : isSlotsError ? (
                     <div className="p-6 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-center flex flex-col items-center">
                       <AlertCircle className="w-8 h-8 mb-2" />
                       <p>Failed to load available times. Please try refreshing.</p>
                     </div>
-                  ) : availableSlots.length === 0 ? (
+                  ) : slotsWithBlocks.length === 0 ? (
                     <div className="p-8 rounded-xl border-2 border-dashed border-border text-center text-muted-foreground">
-                      No time blocks available right now. Please check back later.
+                      {availableSlots.length === 0
+                        ? "No time blocks available right now. Please check back later."
+                        : `No available blocks fit a ${DURATIONS.find(d => d.mins === durationMins)?.label} session. Try a shorter duration.`}
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      {availableSlots.map((slot) => {
-                        const subBlocks = getSubBlocks(slot, durationMins);
-                        if (subBlocks.length === 0) return null;
-
-                        return (
-                          <div key={slot.id} className="rounded-xl border border-border bg-card/60 p-4">
-                            <div className="flex items-center gap-2 mb-3">
-                              <Calendar className="w-4 h-4 text-muted-foreground" />
-                              <span className="text-sm font-semibold text-foreground">{slot.label}</span>
-                              <span className="text-xs text-muted-foreground">
+                    <>
+                      {/* Day picker */}
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {slotsWithBlocks.map((slot) => {
+                          const isSelected = selectedSlotId === slot.id;
+                          const picksFromThisDay = priorities.filter(
+                            (p) => p && Number(p.split("|")[0]) === slot.id
+                          ).length;
+                          return (
+                            <button
+                              key={slot.id}
+                              type="button"
+                              onClick={() => setSelectedSlotId(slot.id)}
+                              className={cn(
+                                "relative flex flex-col items-start px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all",
+                                isSelected
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 text-foreground"
+                              )}
+                            >
+                              <span>{slot.label}</span>
+                              <span className={cn("text-[10px] font-normal", isSelected ? "text-primary/70" : "text-muted-foreground")}>
                                 {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
                               </span>
-                            </div>
+                              {picksFromThisDay > 0 && (
+                                <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold shadow">
+                                  {picksFromThisDay}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
 
-                            <div className="flex flex-wrap gap-2">
+                      {/* Sub-blocks for selected day */}
+                      {selectedSlotId !== null && (() => {
+                        const slot = slotsWithBlocks.find((s) => s.id === selectedSlotId);
+                        if (!slot) return null;
+                        const subBlocks = getSubBlocks(slot, durationMins);
+                        return (
+                          <AnimatePresence mode="wait">
+                            <motion.div
+                              key={selectedSlotId}
+                              initial={{ opacity: 0, y: 6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -6 }}
+                              transition={{ duration: 0.18 }}
+                              className="flex flex-wrap gap-2"
+                            >
                               {subBlocks.map((block) => {
                                 const assignedIdx = priorities.indexOf(block.value);
                                 const isAssigned = assignedIdx !== -1;
                                 const meta = isAssigned ? PRIORITY_META[assignedIdx] : null;
                                 const canSelect = !isAssigned && nextSlot !== -1;
-
                                 return (
                                   <button
                                     key={block.value}
@@ -325,17 +320,11 @@ export default function Home() {
                                   </button>
                                 );
                               })}
-                            </div>
-                          </div>
+                            </motion.div>
+                          </AnimatePresence>
                         );
-                      })}
-
-                      {availableSlots.every((s) => getSubBlocks(s, durationMins).length === 0) && (
-                        <div className="p-4 rounded-xl bg-muted/30 border border-border text-sm text-muted-foreground text-center">
-                          No available blocks fit a {DURATIONS.find(d => d.mins === durationMins)?.label} session. Try a shorter duration.
-                        </div>
-                      )}
-                    </div>
+                      })()}
+                    </>
                   )}
 
                   {/* Priority validation errors */}
