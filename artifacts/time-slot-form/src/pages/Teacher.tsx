@@ -15,7 +15,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
+import { signOutTeacher } from "./TeacherGate";
 
 interface NewSlotForm { label: string; startTime: string; endTime: string; }
 interface ParsedSlot { label: string; startTime: string; endTime: string; }
@@ -762,6 +763,7 @@ function WeeklyCalendar() {
 
 // ── Main Teacher Page ────────────────────────────────────────────────────────
 export default function Teacher() {
+  const [, navigate] = useLocation();
   const { data: slots, isLoading, refetch: refetchSlots } = useGetTimeSlots();
   const { data: bookings, refetch: refetchBookings } = useGetBookings();
   const createSlot = useCreateTimeSlot();
@@ -818,13 +820,21 @@ export default function Teacher() {
             <Link href="/" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft className="w-4 h-4 mr-1.5" />Back to Student Booking
             </Link>
-            <button
-              onClick={() => setShowPasscodeDialog(true)}
-              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/50 hover:border-border rounded-lg px-3 py-1.5 transition-all bg-card/60 hover:bg-card"
-            >
-              <KeyRound className="w-3.5 h-3.5" />
-              Change Passcode
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowPasscodeDialog(true)}
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/50 hover:border-border rounded-lg px-3 py-1.5 transition-all bg-card/60 hover:bg-card"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                Change Passcode
+              </button>
+              <button
+                onClick={() => { signOutTeacher(); navigate("/teacher"); }}
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive border border-border/50 hover:border-destructive/40 rounded-lg px-3 py-1.5 transition-all bg-card/60 hover:bg-card"
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
           <h1 className="text-4xl font-display font-bold text-foreground mb-2">Teacher Area</h1>
           <p className="text-muted-foreground text-lg">Manage your schedule and view student bookings.</p>

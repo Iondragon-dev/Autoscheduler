@@ -1,11 +1,11 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Lock, AlertCircle, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 
-const SESSION_KEY = "teacherAuth";
+export const SESSION_KEY = "teacherAuth";
 
 async function verifyPasscode(passcode: string): Promise<boolean> {
   const res = await fetch("/api/auth/teacher", {
@@ -14,6 +14,11 @@ async function verifyPasscode(passcode: string): Promise<boolean> {
     body: JSON.stringify({ passcode }),
   });
   return res.ok;
+}
+
+/** Call this to immediately sign out of the teacher area. */
+export function signOutTeacher() {
+  sessionStorage.removeItem(SESSION_KEY);
 }
 
 export default function TeacherGate({ children }: { children: ReactNode }) {
@@ -26,10 +31,6 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
   const [error, setError] = useState("");
   const [shake, setShake] = useState(false);
 
-  useEffect(() => {
-    if (authed) sessionStorage.setItem(SESSION_KEY, "1");
-  }, [authed]);
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!passcode) return;
@@ -40,6 +41,7 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
     setLoading(false);
 
     if (ok) {
+      sessionStorage.setItem(SESSION_KEY, "1");
       setAuthed(true);
     } else {
       setError("Incorrect passcode. Please try again.");
