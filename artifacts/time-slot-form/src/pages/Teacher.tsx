@@ -829,7 +829,7 @@ export default function Teacher() {
                 Change Passcode
               </button>
               <button
-                onClick={() => { signOutTeacher(); navigate("/teacher"); }}
+                onClick={() => { signOutTeacher(); navigate("/"); }}
                 className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive border border-border/50 hover:border-destructive/40 rounded-lg px-3 py-1.5 transition-all bg-card/60 hover:bg-card"
               >
                 Sign Out
