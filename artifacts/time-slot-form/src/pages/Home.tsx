@@ -150,6 +150,12 @@ export default function Home() {
       />
 
       <div className="relative w-full max-w-2xl mx-auto z-10">
+        <div className="flex justify-end mb-3">
+          <Link href="/teacher" className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
+            Teacher Area →
+          </Link>
+        </div>
+
         <AnimatePresence mode="wait">
           {!confirmedBooking ? (
             <motion.div
@@ -441,11 +447,6 @@ export default function Home() {
         </AnimatePresence>
       </div>
 
-      <div className="relative z-10 text-center mt-6">
-        <Link href="/teacher" className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
-          Teacher Area
-        </Link>
-      </div>
     </div>
   );
 }

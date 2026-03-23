@@ -4,13 +4,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/Home";
 import Teacher from "@/pages/Teacher";
+import TeacherGate from "@/pages/TeacherGate";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      staleTime: 1000 * 60 * 5, // 5 minutes
+      staleTime: 1000 * 60 * 5,
     },
   },
 });
@@ -19,7 +20,11 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
-      <Route path="/teacher" component={Teacher} />
+      <Route path="/teacher">
+        <TeacherGate>
+          <Teacher />
+        </TeacherGate>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
