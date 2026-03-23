@@ -10,7 +10,7 @@ import {
 import {
   Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft,
   AlertCircle, Calendar, ChevronDown, Mail, User, Sparkles, X,
-  Bot, CheckCircle2, ArrowRight, Loader2, Star,
+  Bot, CheckCircle2, ArrowRight, Loader2, Star, KeyRound, Eye, EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +56,153 @@ function fmtPriority(p: string, slots?: { id: number; label: string }[]): string
 }
 
 const PRIORITY_COLORS = ["text-amber-500", "text-slate-500", "text-slate-400"];
+
+// ── Change Passcode Dialog ────────────────────────────────────────────────────
+function ChangePasscodeDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNext, setShowNext] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  function reset() {
+    setCurrent(""); setNext(""); setConfirm("");
+    setError(""); setSuccess(false); setLoading(false);
+    setShowCurrent(false); setShowNext(false);
+  }
+
+  function handleClose() { reset(); onClose(); }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (next.length < 4) { setError("New passcode must be at least 4 characters."); return; }
+    if (next !== confirm) { setError("New passcodes don't match."); return; }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/teacher/passcode", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPasscode: current, newPasscode: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.message ?? "Failed to update passcode."); }
+      else { setSuccess(true); }
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 16 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-sm p-6"
+          >
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <KeyRound className="w-4 h-4 text-primary" />
+                </div>
+                <h2 className="text-lg font-bold font-display">Change Passcode</h2>
+              </div>
+              <button onClick={handleClose} className="text-muted-foreground hover:text-foreground transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {success ? (
+              <div className="text-center py-4">
+                <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                <p className="font-semibold text-foreground mb-1">Passcode updated!</p>
+                <p className="text-sm text-muted-foreground mb-5">Your new passcode is active.</p>
+                <Button onClick={handleClose} className="w-full">Done</Button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-foreground mb-1.5">Current Passcode</label>
+                  <div className="relative">
+                    <Input
+                      type={showCurrent ? "text" : "password"}
+                      placeholder="Enter current passcode"
+                      value={current}
+                      onChange={(e) => setCurrent(e.target.value)}
+                      className="pr-10"
+                      autoFocus
+                    />
+                    <button type="button" tabIndex={-1} onClick={() => setShowCurrent(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                      {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-foreground mb-1.5">New Passcode</label>
+                  <div className="relative">
+                    <Input
+                      type={showNext ? "text" : "password"}
+                      placeholder="At least 4 characters"
+                      value={next}
+                      onChange={(e) => setNext(e.target.value)}
+                      className="pr-10"
+                    />
+                    <button type="button" tabIndex={-1} onClick={() => setShowNext(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                      {showNext ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-foreground mb-1.5">Confirm New Passcode</label>
+                  <Input
+                    type="password"
+                    placeholder="Repeat new passcode"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    error={!!(confirm && confirm !== next)}
+                  />
+                </div>
+
+                <AnimatePresence>
+                  {error && (
+                    <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                      className="text-sm font-medium text-destructive flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 shrink-0" />{error}
+                    </motion.p>
+                  )}
+                </AnimatePresence>
+
+                <div className="flex gap-2 pt-1">
+                  <Button type="button" variant="outline" className="flex-1" onClick={handleClose}>Cancel</Button>
+                  <Button type="submit" className="flex-1" isLoading={loading}>Update</Button>
+                </div>
+              </form>
+            )}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
 
 function parseSlotsFromResponse(text: string): ParsedSlot[] | null {
   const match = text.match(/<TIMESLOTS>([\s\S]*?)<\/TIMESLOTS>/);
@@ -627,6 +774,7 @@ export default function Teacher() {
   const [expandedSlotId, setExpandedSlotId] = useState<number | null>(null);
   const [form, setForm] = useState<NewSlotForm>({ label: "", startTime: "", endTime: "" });
   const [formError, setFormError] = useState<string | null>(null);
+  const [showPasscodeDialog, setShowPasscodeDialog] = useState(false);
 
   const handleAddSlot = () => {
     if (!form.label.trim() || !form.startTime || !form.endTime) {
@@ -662,11 +810,22 @@ export default function Teacher() {
       <img src={`${import.meta.env.BASE_URL}images/bg-mesh.png`} alt="" className="fixed inset-0 w-full h-full object-cover opacity-60 mix-blend-multiply pointer-events-none" />
 
       <div className="relative max-w-3xl mx-auto z-10 pb-24">
+        <ChangePasscodeDialog open={showPasscodeDialog} onClose={() => setShowPasscodeDialog(false)} />
+
         {/* Header */}
         <div className="mb-8">
-          <Link href="/" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors mb-6">
-            <ArrowLeft className="w-4 h-4 mr-1.5" />Back to Student Booking
-          </Link>
+          <div className="flex items-start justify-between mb-6">
+            <Link href="/" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="w-4 h-4 mr-1.5" />Back to Student Booking
+            </Link>
+            <button
+              onClick={() => setShowPasscodeDialog(true)}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/50 hover:border-border rounded-lg px-3 py-1.5 transition-all bg-card/60 hover:bg-card"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              Change Passcode
+            </button>
+          </div>
           <h1 className="text-4xl font-display font-bold text-foreground mb-2">Teacher Area</h1>
           <p className="text-muted-foreground text-lg">Manage your schedule and view student bookings.</p>
         </div>
