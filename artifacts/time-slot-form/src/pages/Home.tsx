@@ -304,18 +304,23 @@ export default function Home() {
                                       disabled={!isAssigned && nextSlot === -1}
                                       onClick={() => handleBlockClick(block.value, slot.id)}
                                       className={cn(
-                                        "relative flex flex-col items-center px-3 py-2 rounded-xl border-2 text-xs font-medium transition-all duration-200 min-w-[72px]",
+                                        "group relative flex flex-col items-center px-3 py-2 rounded-xl border-2 text-xs font-medium transition-all duration-200 min-w-[72px]",
                                         isAssigned
-                                          ? `${meta!.activeBg} shadow-sm scale-[1.04]`
+                                          ? `${meta!.activeBg} shadow-sm scale-[1.04] hover:opacity-80`
                                           : canSelect
                                           ? "border-border bg-card hover:border-primary/50 hover:bg-primary/5 text-foreground cursor-pointer"
                                           : "border-border/30 bg-muted/20 text-muted-foreground/40 cursor-not-allowed"
                                       )}
                                     >
                                       {isAssigned && (
-                                        <span className={cn("absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow", meta!.badge)}>
-                                          {assignedIdx + 1}
-                                        </span>
+                                        <>
+                                          <span className={cn("absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow transition-opacity group-hover:opacity-0", meta!.badge)}>
+                                            {assignedIdx + 1}
+                                          </span>
+                                          <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center text-[10px] font-bold shadow opacity-0 group-hover:opacity-100 transition-opacity">
+                                            ×
+                                          </span>
+                                        </>
                                       )}
                                       <span className="font-semibold">{fmt12(block.start)}</span>
                                       <span className={cn("text-[10px]", isAssigned ? "text-current/70" : "text-muted-foreground")}>
