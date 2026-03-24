@@ -195,22 +195,13 @@ function dayOfSlot(label: string): string {
 // ── AI Assistant Popup ───────────────────────────────────────────────────────
 type WizardStep = "days" | "times" | "processing" | "confirm" | "done";
 type BlockStep = "input" | "done";
-type EditStep = "input" | "processing" | "confirm" | "done";
+type EditStep = "input" | "done";
 type PendingBlock = { slotId: number; slotLabel: string; ranges: { start: string; end: string }[] };
 type EditOp =
   | { op: "create"; label: string; startTime: string; endTime: string }
   | { op: "update"; slotId: number; label?: string; startTime?: string; endTime?: string }
   | { op: "delete"; slotId: number };
 
-function parseEditsFromResponse(text: string): EditOp[] | null {
-  const match = text.match(/<EDIT_SLOTS>([\s\S]*?)<\/EDIT_SLOTS>/);
-  if (!match) return null;
-  try { return JSON.parse(match[1].trim()) as EditOp[]; } catch { return null; }
-}
-
-function stripEditTag(text: string) {
-  return text.replace(/<EDIT_SLOTS>[\s\S]*?<\/EDIT_SLOTS>/, "").trim();
-}
 
 function genTimeOptions(startTime: string, endTime: string, stepMins = 30): string[] {
   const opts: string[] = [];
@@ -237,9 +228,12 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
 
   // Edit schedule state
   const [editStep, setEditStep] = useState<EditStep>("input");
-  const [editPrompt, setEditPrompt] = useState("");
-  const [editAiMessage, setEditAiMessage] = useState("");
-  const [pendingEdits, setPendingEdits] = useState<EditOp[] | null>(null);
+  const [editOp, setEditOp] = useState<"add" | "modify" | "remove" | null>(null);
+  const [editSelectedSlotId, setEditSelectedSlotId] = useState<number | null>(null);
+  const [editAddDay, setEditAddDay] = useState("");
+  const [editRangeStart, setEditRangeStart] = useState("");
+  const [editRangeEnd, setEditRangeEnd] = useState("");
+  const [pendingEdits, setPendingEdits] = useState<EditOp[]>([]);
   const [applyingEdits, setApplyingEdits] = useState(false);
 
   // Block times state
@@ -264,7 +258,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
   }
 
   function resetEditState() {
-    setEditPrompt(""); setEditAiMessage(""); setPendingEdits(null);
+    setEditOp(null); setEditSelectedSlotId(null); setEditAddDay(""); setEditRangeStart(""); setEditRangeEnd(""); setPendingEdits([]);
   }
 
   function handleOpen() {
@@ -280,47 +274,35 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
     setMode(m);
   }
 
-  async function handleSubmitEdit() {
-    if (!editPrompt.trim()) return;
-    setEditStep("processing");
-    setEditAiMessage("");
-    try {
-      const res = await fetch("/api/ai/edit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: editPrompt }],
-          slots: slots.map((s) => ({ id: s.id, label: s.label, startTime: s.startTime, endTime: s.endTime })),
-        }),
-      });
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let full = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = JSON.parse(line.slice(6));
-          if (data.content) { full += data.content; setEditAiMessage(full); }
-        }
-      }
-      const parsed = parseEditsFromResponse(full);
-      setPendingEdits(parsed && parsed.length > 0 ? parsed : []);
-      setEditAiMessage(stripEditTag(full) || "Ready to apply your changes.");
-      setEditStep("confirm");
-    } catch {
-      setEditAiMessage("Something went wrong. Please try again.");
-      setEditStep("confirm");
+  function handleAddEditOp() {
+    if (editOp === "add") {
+      if (!editAddDay || !editRangeStart || !editRangeEnd) return;
+      if (toMins(editRangeStart) >= toMins(editRangeEnd)) return;
+      const label = `${editAddDay} ${fmt12(editRangeStart)} – ${fmt12(editRangeEnd)}`;
+      setPendingEdits((prev) => [...prev, { op: "create", label, startTime: editRangeStart, endTime: editRangeEnd }]);
+      setEditAddDay(""); setEditRangeStart(""); setEditRangeEnd("");
+    } else if (editOp === "modify") {
+      if (editSelectedSlotId === null || !editRangeStart || !editRangeEnd) return;
+      if (toMins(editRangeStart) >= toMins(editRangeEnd)) return;
+      const slot = slots.find((s) => s.id === editSelectedSlotId)!;
+      const dayPrefix = ALL_DAYS.find((d) => slot.label.startsWith(d)) ?? slot.label.split(" ")[0];
+      const label = `${dayPrefix} ${fmt12(editRangeStart)} – ${fmt12(editRangeEnd)}`;
+      setPendingEdits((prev) => [...prev, { op: "update", slotId: editSelectedSlotId, label, startTime: editRangeStart, endTime: editRangeEnd }]);
+      setEditSelectedSlotId(null); setEditRangeStart(""); setEditRangeEnd("");
+    } else if (editOp === "remove") {
+      if (editSelectedSlotId === null) return;
+      if (pendingEdits.some((e) => e.op === "delete" && e.slotId === editSelectedSlotId)) return;
+      setPendingEdits((prev) => [...prev, { op: "delete", slotId: editSelectedSlotId }]);
+      setEditSelectedSlotId(null);
     }
   }
 
+  function handleRemoveEditOp(i: number) {
+    setPendingEdits((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
   async function handleApplyEdits() {
-    if (!pendingEdits || pendingEdits.length === 0) return;
+    if (pendingEdits.length === 0) return;
     setApplyingEdits(true);
     for (const op of pendingEdits) {
       if (op.op === "create") {
@@ -530,9 +512,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                       {mode === "create" && step === "processing" && "Generating your schedule…"}
                       {mode === "create" && step === "confirm" && "Ready to add slots"}
                       {mode === "create" && step === "done" && "Schedule created!"}
-                      {mode === "edit" && editStep === "input" && "Describe your changes"}
-                      {mode === "edit" && editStep === "processing" && "Analyzing your request…"}
-                      {mode === "edit" && editStep === "confirm" && "Review the changes"}
+                      {mode === "edit" && editStep === "input" && "Pick what to change"}
                       {mode === "edit" && editStep === "done" && "Schedule updated!"}
                       {mode === "block" && blockStep === "input" && "Pick times to block off"}
                       {mode === "block" && blockStep === "done" && "Times blocked!"}
@@ -775,124 +755,202 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -20 }}
-                    className="p-5 space-y-4"
+                    className="p-5 space-y-5"
                   >
-                    {slots.length === 0 ? (
-                      <div className="text-center py-6 text-muted-foreground">
-                        <p className="text-sm">No schedule set up yet.</p>
-                        <p className="text-xs mt-1">Use the Create tab first to set up your schedule.</p>
-                      </div>
-                    ) : (
-                      <>
-                        <div>
-                          <p className="text-sm font-medium text-foreground mb-2">Current schedule</p>
-                          <div className="space-y-1 max-h-28 overflow-y-auto rounded-xl border border-border bg-muted/30 p-3">
-                            {slots.map((s) => (
-                              <div key={s.id} className="text-xs text-muted-foreground flex items-center gap-1.5">
-                                <Clock className="w-3 h-3 shrink-0 text-primary/60" />
-                                <span>{s.label}</span>
-                                <span className="ml-auto text-[10px] text-muted-foreground/60">#{s.id}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-foreground mb-2">What would you like to change?</label>
-                          <textarea
-                            value={editPrompt}
-                            onChange={(e) => setEditPrompt(e.target.value)}
-                            placeholder={`e.g. "Extend Tuesday to 3 PM", "Remove Friday", "Add a Thursday 10–11 AM slot"`}
-                            rows={3}
-                            className="w-full text-sm bg-background border border-border rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary/30 resize-none"
-                          />
-                        </div>
-                        <Button className="w-full" onClick={handleSubmitEdit} disabled={!editPrompt.trim()}>
-                          <Sparkles className="w-4 h-4 mr-1.5" />
-                          Apply Changes
-                        </Button>
-                      </>
-                    )}
-                  </motion.div>
-                )}
-
-                {mode === "edit" && editStep === "processing" && (
-                  <motion.div
-                    key="edit-processing"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="p-8 flex flex-col items-center text-center gap-4"
-                  >
-                    <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Loader2 className="w-7 h-7 text-primary animate-spin" />
-                    </div>
+                    {/* Operation selector */}
                     <div>
-                      <p className="font-semibold text-foreground">Analyzing your request…</p>
-                      <p className="text-sm text-muted-foreground mt-1">Figuring out what needs to change.</p>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">1. What do you want to do?</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([
+                          { id: "add", icon: Plus, label: "Add Slot", color: "text-green-600", bg: "bg-green-50 border-green-200", activeBg: "bg-green-500 border-green-500 text-white" },
+                          { id: "modify", icon: ArrowRight, label: "Edit Slot", color: "text-blue-600", bg: "bg-blue-50 border-blue-200", activeBg: "bg-blue-500 border-blue-500 text-white" },
+                          { id: "remove", icon: Trash2, label: "Remove Slot", color: "text-red-500", bg: "bg-red-50 border-red-200", activeBg: "bg-red-500 border-red-500 text-white" },
+                        ] as const).map(({ id, icon: Icon, label, bg, activeBg }) => (
+                          <button
+                            key={id}
+                            onClick={() => { setEditOp(id); setEditSelectedSlotId(null); setEditAddDay(""); setEditRangeStart(""); setEditRangeEnd(""); }}
+                            className={cn(
+                              "flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-semibold transition-all",
+                              editOp === id ? activeBg : bg + " text-foreground hover:opacity-80"
+                            )}
+                          >
+                            <Icon className="w-4 h-4" />
+                            {label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    {editAiMessage && (
-                      <p className="text-sm text-muted-foreground bg-muted/40 rounded-xl px-4 py-3 text-left w-full whitespace-pre-wrap">
-                        {stripEditTag(editAiMessage)}
-                      </p>
-                    )}
-                  </motion.div>
-                )}
 
-                {mode === "edit" && editStep === "confirm" && (
-                  <motion.div
-                    key="edit-confirm"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-5 space-y-4"
-                  >
-                    {editAiMessage && (
-                      <div className="flex gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                          <Bot className="w-3.5 h-3.5 text-primary" />
+                    {/* Add: day picker + time range */}
+                    {editOp === "add" && (
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">2. Pick a day</p>
+                        <div className="flex flex-wrap gap-2">
+                          {ALL_DAYS.map((d) => (
+                            <button
+                              key={d}
+                              onClick={() => { setEditAddDay(d); setEditRangeStart(""); setEditRangeEnd(""); }}
+                              className={cn(
+                                "text-xs px-3 py-1.5 rounded-full border font-medium transition-all",
+                                editAddDay === d ? "bg-primary text-primary-foreground border-primary" : "bg-background text-foreground border-border hover:border-primary/50"
+                              )}
+                            >
+                              {DAY_SHORT[d]}
+                            </button>
+                          ))}
                         </div>
-                        <p className="text-sm text-foreground bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 leading-relaxed">{editAiMessage}</p>
+                        {editAddDay && (() => {
+                          const timeOpts = genTimeOptions("06:00", "22:00", 30);
+                          const endOpts = timeOpts.filter((t) => !editRangeStart || toMins(t) > toMins(editRangeStart));
+                          const canAdd = editRangeStart && editRangeEnd && toMins(editRangeStart) < toMins(editRangeEnd);
+                          return (
+                            <div className="space-y-2">
+                              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">3. Set hours</p>
+                              <div className="flex items-center gap-2">
+                                <select value={editRangeStart} onChange={(e) => { setEditRangeStart(e.target.value); setEditRangeEnd(""); }} className="flex-1 text-sm bg-background border border-border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-primary/30">
+                                  <option value="">From</option>
+                                  {timeOpts.slice(0, -1).map((t) => <option key={t} value={t}>{fmt12(t)}</option>)}
+                                </select>
+                                <span className="text-muted-foreground text-xs shrink-0">to</span>
+                                <select value={editRangeEnd} onChange={(e) => setEditRangeEnd(e.target.value)} disabled={!editRangeStart} className="flex-1 text-sm bg-background border border-border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50">
+                                  <option value="">To</option>
+                                  {endOpts.map((t) => <option key={t} value={t}>{fmt12(t)}</option>)}
+                                </select>
+                                <button onClick={handleAddEditOp} disabled={!canAdd} className="shrink-0 w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-40 hover:bg-primary/90 transition-colors">
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
-                    {pendingEdits && pendingEdits.length > 0 ? (
-                      <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-3">
-                        <p className="text-sm font-semibold text-foreground">Proposed changes</p>
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {pendingEdits.map((op, i) => (
-                            <div key={i} className="flex items-start gap-2 text-xs">
+
+                    {/* Modify: slot picker + time range */}
+                    {editOp === "modify" && (
+                      <div className="space-y-3">
+                        {slots.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-3">No slots to edit yet.</p>
+                        ) : (
+                          <>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">2. Pick a slot to edit</p>
+                            <div className="flex flex-wrap gap-2">
+                              {slots.map((s) => (
+                                <button
+                                  key={s.id}
+                                  onClick={() => {
+                                    setEditSelectedSlotId(s.id);
+                                    setEditRangeStart(s.startTime);
+                                    setEditRangeEnd(s.endTime);
+                                  }}
+                                  className={cn(
+                                    "text-xs px-3 py-1.5 rounded-full border font-medium transition-all",
+                                    editSelectedSlotId === s.id ? "bg-primary text-primary-foreground border-primary" : "bg-background text-foreground border-border hover:border-primary/50"
+                                  )}
+                                >
+                                  {s.label}
+                                </button>
+                              ))}
+                            </div>
+                            {editSelectedSlotId !== null && (() => {
+                              const timeOpts = genTimeOptions("06:00", "22:00", 30);
+                              const endOpts = timeOpts.filter((t) => !editRangeStart || toMins(t) > toMins(editRangeStart));
+                              const canAdd = editRangeStart && editRangeEnd && toMins(editRangeStart) < toMins(editRangeEnd);
+                              return (
+                                <div className="space-y-2">
+                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">3. Set new hours</p>
+                                  <div className="flex items-center gap-2">
+                                    <select value={editRangeStart} onChange={(e) => { setEditRangeStart(e.target.value); setEditRangeEnd(""); }} className="flex-1 text-sm bg-background border border-border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-primary/30">
+                                      <option value="">From</option>
+                                      {timeOpts.slice(0, -1).map((t) => <option key={t} value={t}>{fmt12(t)}</option>)}
+                                    </select>
+                                    <span className="text-muted-foreground text-xs shrink-0">to</span>
+                                    <select value={editRangeEnd} onChange={(e) => setEditRangeEnd(e.target.value)} disabled={!editRangeStart} className="flex-1 text-sm bg-background border border-border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50">
+                                      <option value="">To</option>
+                                      {endOpts.map((t) => <option key={t} value={t}>{fmt12(t)}</option>)}
+                                    </select>
+                                    <button onClick={handleAddEditOp} disabled={!canAdd} className="shrink-0 w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-40 hover:bg-primary/90 transition-colors">
+                                      <Plus className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Remove: slot picker */}
+                    {editOp === "remove" && (
+                      <div className="space-y-3">
+                        {slots.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-3">No slots to remove yet.</p>
+                        ) : (
+                          <>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">2. Tap a slot to remove it</p>
+                            <div className="flex flex-wrap gap-2">
+                              {slots.map((s) => {
+                                const queued = pendingEdits.some((e) => e.op === "delete" && e.slotId === s.id);
+                                return (
+                                  <button
+                                    key={s.id}
+                                    onClick={() => { if (!queued) setPendingEdits((prev) => [...prev, { op: "delete", slotId: s.id }]); }}
+                                    disabled={queued}
+                                    className={cn(
+                                      "text-xs px-3 py-1.5 rounded-full border font-medium transition-all",
+                                      queued ? "bg-red-100 text-red-400 border-red-200 line-through" : "bg-background text-foreground border-border hover:bg-red-50 hover:border-red-300 hover:text-red-600"
+                                    )}
+                                  >
+                                    {s.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Pending queue */}
+                    {pendingEdits.length > 0 && (
+                      <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 space-y-2">
+                        <p className="text-xs font-semibold text-foreground">Queued changes</p>
+                        {pendingEdits.map((op, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <span className="flex items-center gap-2">
                               <span className={cn(
-                                "shrink-0 mt-0.5 px-1.5 py-0.5 rounded font-semibold uppercase text-[10px]",
+                                "px-1.5 py-0.5 rounded font-semibold uppercase text-[10px]",
                                 op.op === "create" && "bg-green-100 text-green-700",
                                 op.op === "update" && "bg-blue-100 text-blue-700",
                                 op.op === "delete" && "bg-red-100 text-red-700",
                               )}>
-                                {op.op}
+                                {op.op === "create" ? "add" : op.op === "update" ? "edit" : "remove"}
                               </span>
-                              <span className="text-muted-foreground leading-relaxed">
-                                {op.op === "create" && `${op.label} (${fmt12(op.startTime)} – ${fmt12(op.endTime)})`}
-                                {op.op === "update" && (() => {
-                                  const slot = slots.find((s) => s.id === op.slotId);
-                                  const parts: string[] = [];
-                                  if (op.label) parts.push(`rename to "${op.label}"`);
-                                  if (op.startTime) parts.push(`start ${fmt12(op.startTime)}`);
-                                  if (op.endTime) parts.push(`end ${fmt12(op.endTime)}`);
-                                  return `${slot?.label ?? `Slot #${op.slotId}`}: ${parts.join(", ")}`;
-                                })()}
-                                {op.op === "delete" && `Remove ${slots.find((s) => s.id === op.slotId)?.label ?? `Slot #${op.slotId}`}`}
+                              <span className="text-muted-foreground">
+                                {op.op === "create" && `${op.label}`}
+                                {op.op === "update" && `${slots.find((s) => s.id === op.slotId)?.label.split(" ")[0] ?? "Slot"} → ${fmt12(op.startTime ?? "")} – ${fmt12(op.endTime ?? "")}`}
+                                {op.op === "delete" && `${slots.find((s) => s.id === op.slotId)?.label ?? `Slot #${op.slotId}`}`}
                               </span>
-                            </div>
-                          ))}
-                        </div>
-                        <Button className="w-full" onClick={handleApplyEdits} isLoading={applyingEdits}>
-                          Apply Changes
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="text-center py-4">
-                        <p className="text-sm text-muted-foreground">No changes were identified. Please try rephrasing.</p>
-                        <Button variant="outline" className="mt-3" onClick={() => setEditStep("input")}>
-                          Try Again
-                        </Button>
+                            </span>
+                            <button onClick={() => handleRemoveEditOp(i)} className="ml-2 text-muted-foreground/60 hover:text-destructive transition-colors">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     )}
+
+                    {/* Apply */}
+                    <Button
+                      className="w-full"
+                      onClick={handleApplyEdits}
+                      isLoading={applyingEdits}
+                      disabled={pendingEdits.length === 0}
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                      Apply {pendingEdits.length || ""} {pendingEdits.length === 1 ? "Change" : "Changes"}
+                    </Button>
                   </motion.div>
                 )}
 
