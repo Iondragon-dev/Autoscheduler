@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, timestamp, integer, json } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -8,6 +8,7 @@ export const timeSlotsTable = pgTable("time_slots", {
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
   available: boolean("available").notNull().default(true),
+  blockedTimes: json("blocked_times").$type<Array<{ start: string; end: string }>>(),
 });
 
 export const bookingsTable = pgTable("bookings", {

@@ -9,12 +9,18 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface BlockedTimeRange {
+  start: string;
+  end: string;
+}
+
 export interface TimeSlot {
   id: number;
   label: string;
   startTime: string;
   endTime: string;
   available: boolean;
+  blockedTimes: BlockedTimeRange[];
 }
 
 export interface CreateTimeSlotRequest {

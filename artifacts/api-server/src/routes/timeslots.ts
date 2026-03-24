@@ -5,15 +5,20 @@ import { CreateBookingBody, CreateTimeSlotBody, UpdateTimeSlotBody } from "@work
 
 const router: IRouter = Router();
 
-router.get("/timeslots", async (_req, res) => {
-  const slots = await db.select().from(timeSlotsTable).orderBy(timeSlotsTable.id);
-  res.json(slots.map((s) => ({
+function serializeSlot(s: typeof timeSlotsTable.$inferSelect) {
+  return {
     id: s.id,
     label: s.label,
     startTime: s.startTime,
     endTime: s.endTime,
     available: s.available,
-  })));
+    blockedTimes: s.blockedTimes ?? [],
+  };
+}
+
+router.get("/timeslots", async (_req, res) => {
+  const slots = await db.select().from(timeSlotsTable).orderBy(timeSlotsTable.id);
+  res.json(slots.map(serializeSlot));
 });
 
 router.post("/timeslots", async (req, res) => {
@@ -25,13 +30,7 @@ router.post("/timeslots", async (req, res) => {
 
   const { label, startTime, endTime } = parsed.data;
   const [slot] = await db.insert(timeSlotsTable).values({ label, startTime, endTime, available: true }).returning();
-  res.status(201).json({
-    id: slot.id,
-    label: slot.label,
-    startTime: slot.startTime,
-    endTime: slot.endTime,
-    available: slot.available,
-  });
+  res.status(201).json(serializeSlot(slot));
 });
 
 router.patch("/timeslots/:id", async (req, res) => {
@@ -54,18 +53,23 @@ router.patch("/timeslots/:id", async (req, res) => {
   if (parsed.data.endTime !== undefined) updates.endTime = parsed.data.endTime;
 
   const [updated] = await db.update(timeSlotsTable).set(updates).where(eq(timeSlotsTable.id, id)).returning();
-  if (!updated) {
-    res.status(404).json({ message: "Time slot not found" });
-    return;
-  }
+  if (!updated) { res.status(404).json({ message: "Time slot not found" }); return; }
+  res.json(serializeSlot(updated));
+});
 
-  res.json({
-    id: updated.id,
-    label: updated.label,
-    startTime: updated.startTime,
-    endTime: updated.endTime,
-    available: updated.available,
-  });
+router.patch("/timeslots/:id/blocked-times", async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ message: "Invalid id" }); return; }
+
+  const { ranges } = req.body as { ranges: Array<{ start: string; end: string }> };
+  if (!Array.isArray(ranges)) { res.status(400).json({ message: "ranges must be an array" }); return; }
+
+  const [existing] = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.id, id)).limit(1);
+  if (!existing) { res.status(404).json({ message: "Time slot not found" }); return; }
+
+  const merged = [...(existing.blockedTimes ?? []), ...ranges];
+  const [updated] = await db.update(timeSlotsTable).set({ blockedTimes: merged }).where(eq(timeSlotsTable.id, id)).returning();
+  res.json(serializeSlot(updated));
 });
 
 router.delete("/timeslots/:id", async (req, res) => {

@@ -44,10 +44,16 @@ export function makeValue(slotId: number, start: string, end: string) {
 export function getSubBlocks(slot: TimeSlot, stepMins: number) {
   const start = toMins(slot.startTime);
   const end = toMins(slot.endTime);
+  const blocked = (slot.blockedTimes ?? []).map((r) => ({ s: toMins(r.start), e: toMins(r.end) }));
+
   const blocks: { start: string; end: string; value: string }[] = [];
   for (let t = start; t + stepMins <= end; t += stepMins) {
-    const s = fromMins(t);
-    const e = fromMins(t + stepMins);
+    const subStart = t;
+    const subEnd = t + stepMins;
+    const isBlocked = blocked.some((b) => b.s < subEnd && b.e > subStart);
+    if (isBlocked) continue;
+    const s = fromMins(subStart);
+    const e = fromMins(subEnd);
     blocks.push({ start: s, end: e, value: makeValue(slot.id, s, e) });
   }
   return blocks;

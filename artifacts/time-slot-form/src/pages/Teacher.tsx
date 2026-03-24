@@ -194,15 +194,46 @@ function dayOfSlot(label: string): string {
 
 // ── AI Assistant Popup ───────────────────────────────────────────────────────
 type WizardStep = "days" | "times" | "processing" | "confirm" | "done";
+type BlockStep = "input" | "processing" | "confirm" | "done";
+type PendingBlock = { slotId: number; slotLabel: string; ranges: { start: string; end: string }[] };
 
-function AiAssistant({ onSlotsCreated }: { onSlotsCreated: () => void }) {
+function parseBlocksFromResponse(text: string): PendingBlock[] | null {
+  const match = text.match(/<BLOCK_TIMES>([\s\S]*?)<\/BLOCK_TIMES>/);
+  if (!match) return null;
+  try {
+    const raw = JSON.parse(match[1].trim()) as Array<{ slotId: number; ranges: { start: string; end: string }[] }>;
+    return raw.map((b) => ({ slotId: b.slotId, slotLabel: "", ranges: b.ranges }));
+  } catch { return null; }
+}
+
+function stripBlockTag(text: string) {
+  return text.replace(/<BLOCK_TIMES>[\s\S]*?<\/BLOCK_TIMES>/, "").trim();
+}
+
+interface AiAssistantProps {
+  onSlotsCreated: () => void;
+  slots: { id: number; label: string; startTime: string; endTime: string; blockedTimes: { start: string; end: string }[] }[];
+}
+
+function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"create" | "block">("create");
+
+  // Create schedule wizard state
   const [step, setStep] = useState<WizardStep>("days");
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [dayTimes, setDayTimes] = useState<Record<string, { start: string; end: string }>>({});
   const [aiMessage, setAiMessage] = useState("");
   const [pendingSlots, setPendingSlots] = useState<ParsedSlot[] | null>(null);
   const [creating, setCreating] = useState(false);
+
+  // Block times state
+  const [blockStep, setBlockStep] = useState<BlockStep>("input");
+  const [blockPrompt, setBlockPrompt] = useState("");
+  const [blockAiMessage, setBlockAiMessage] = useState("");
+  const [pendingBlocks, setPendingBlocks] = useState<PendingBlock[] | null>(null);
+  const [applying, setApplying] = useState(false);
+
   const createSlot = useCreateTimeSlot();
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -213,15 +244,80 @@ function AiAssistant({ onSlotsCreated }: { onSlotsCreated: () => void }) {
   }
 
   function handleOpen() {
-    // Reset on re-open if done
     if (step === "done") {
-      setStep("days");
-      setSelectedDays([]);
-      setDayTimes({});
-      setAiMessage("");
-      setPendingSlots(null);
+      setStep("days"); setSelectedDays([]); setDayTimes({}); setAiMessage(""); setPendingSlots(null);
+    }
+    if (blockStep === "done") {
+      setBlockStep("input"); setBlockPrompt(""); setBlockAiMessage(""); setPendingBlocks(null);
     }
     setOpen(true);
+  }
+
+  function switchMode(m: "create" | "block") {
+    setMode(m);
+  }
+
+  async function handleSubmitBlock() {
+    if (!blockPrompt.trim()) return;
+    setBlockStep("processing");
+    setBlockAiMessage("");
+    try {
+      const res = await fetch("/api/ai/block", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: blockPrompt }],
+          slots: slots.map((s) => ({ id: s.id, label: s.label, startTime: s.startTime, endTime: s.endTime })),
+        }),
+      });
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let full = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = JSON.parse(line.slice(6));
+          if (data.content) { full += data.content; setBlockAiMessage(full); }
+        }
+      }
+      const parsed = parseBlocksFromResponse(full);
+      if (parsed && parsed.length > 0) {
+        const enriched = parsed.map((b) => ({
+          ...b,
+          slotLabel: slots.find((s) => s.id === b.slotId)?.label ?? `Slot #${b.slotId}`,
+        }));
+        setPendingBlocks(enriched);
+        setBlockAiMessage(stripBlockTag(full));
+      } else {
+        setBlockAiMessage(stripBlockTag(full) || "No blocks were identified. Please try rephrasing.");
+        setPendingBlocks(null);
+      }
+      setBlockStep("confirm");
+    } catch {
+      setBlockAiMessage("Something went wrong. Please try again.");
+      setBlockStep("confirm");
+    }
+  }
+
+  async function handleApplyBlocks() {
+    if (!pendingBlocks) return;
+    setApplying(true);
+    for (const block of pendingBlocks) {
+      await fetch(`/api/timeslots/${block.slotId}/blocked-times`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ranges: block.ranges }),
+      });
+    }
+    setApplying(false);
+    setBlockStep("done");
+    onSlotsCreated();
   }
 
   function toggleDay(day: string) {
@@ -353,33 +449,56 @@ function AiAssistant({ onSlotsCreated }: { onSlotsCreated: () => void }) {
             className="fixed bottom-24 right-6 z-50 w-[min(440px,calc(100vw-3rem))] bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-primary/5 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center">
-                  <Bot className="w-4 h-4 text-primary" />
+            <div className="px-5 pt-4 pb-0 border-b border-border bg-primary/5 shrink-0">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center">
+                    <Bot className="w-4 h-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">Scheduling Assistant</p>
+                    <p className="text-xs text-muted-foreground">
+                      {mode === "create" && step === "days" && "Step 1 of 2 — Pick your days"}
+                      {mode === "create" && step === "times" && "Step 2 of 2 — Set your hours"}
+                      {mode === "create" && step === "processing" && "Generating your schedule…"}
+                      {mode === "create" && step === "confirm" && "Ready to add slots"}
+                      {mode === "create" && step === "done" && "Schedule created!"}
+                      {mode === "block" && blockStep === "input" && "Describe what to block off"}
+                      {mode === "block" && blockStep === "processing" && "Analyzing your request…"}
+                      {mode === "block" && blockStep === "confirm" && "Review the changes"}
+                      {mode === "block" && blockStep === "done" && "Times blocked!"}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-bold text-foreground">Scheduling Assistant</p>
-                  <p className="text-xs text-muted-foreground">
-                    {step === "days" && "Step 1 of 2 — Pick your days"}
-                    {step === "times" && "Step 2 of 2 — Set your hours"}
-                    {step === "processing" && "Generating your schedule…"}
-                    {step === "confirm" && "Ready to add slots"}
-                    {step === "done" && "Schedule created!"}
-                  </p>
-                </div>
+                <button onClick={handleClose} className="text-muted-foreground hover:text-foreground transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button onClick={handleClose} className="text-muted-foreground hover:text-foreground transition-colors">
-                <X className="w-5 h-5" />
-              </button>
+              {/* Mode tabs */}
+              <div className="flex gap-1 -mb-px">
+                {(["create", "block"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => switchMode(m)}
+                    className={cn(
+                      "px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-all",
+                      mode === m
+                        ? "border-border bg-card text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {m === "create" ? "Create Schedule" : "Block Times"}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Body */}
             <div className="overflow-y-auto max-h-[480px]">
               <AnimatePresence mode="wait">
 
-                {/* ── Step 1: Day checkboxes ── */}
-                {step === "days" && (
+                {/* ── Create Schedule mode ── */}
+                {mode === "create" && step === "days" && (
                   <motion.div
                     key="days"
                     initial={{ opacity: 0, x: 20 }}
@@ -435,8 +554,7 @@ function AiAssistant({ onSlotsCreated }: { onSlotsCreated: () => void }) {
                   </motion.div>
                 )}
 
-                {/* ── Step 2: Time pickers ── */}
-                {step === "times" && (
+                {mode === "create" && step === "times" && (
                   <motion.div
                     key="times"
                     initial={{ opacity: 0, x: 20 }}
@@ -499,8 +617,7 @@ function AiAssistant({ onSlotsCreated }: { onSlotsCreated: () => void }) {
                   </motion.div>
                 )}
 
-                {/* ── Processing ── */}
-                {step === "processing" && (
+                {mode === "create" && step === "processing" && (
                   <motion.div
                     key="processing"
                     initial={{ opacity: 0 }}
@@ -520,8 +637,7 @@ function AiAssistant({ onSlotsCreated }: { onSlotsCreated: () => void }) {
                   </motion.div>
                 )}
 
-                {/* ── Confirm ── */}
-                {step === "confirm" && (
+                {mode === "create" && step === "confirm" && (
                   <motion.div
                     key="confirm"
                     initial={{ opacity: 0, y: 10 }}
@@ -567,8 +683,7 @@ function AiAssistant({ onSlotsCreated }: { onSlotsCreated: () => void }) {
                   </motion.div>
                 )}
 
-                {/* ── Done ── */}
-                {step === "done" && (
+                {mode === "create" && step === "done" && (
                   <motion.div
                     key="done"
                     initial={{ opacity: 0, scale: 0.9 }}
@@ -584,12 +699,150 @@ function AiAssistant({ onSlotsCreated }: { onSlotsCreated: () => void }) {
                   </motion.div>
                 )}
 
+                {/* ── Block Times mode ── */}
+                {mode === "block" && blockStep === "input" && (
+                  <motion.div
+                    key="block-input"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="p-5 space-y-4"
+                  >
+                    {slots.length === 0 ? (
+                      <div className="text-center py-6 text-muted-foreground">
+                        <p className="text-sm">No schedule set up yet.</p>
+                        <p className="text-xs mt-1">Use the Create Schedule tab first.</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <p className="text-sm font-medium text-foreground mb-2">Current schedule</p>
+                          <div className="space-y-1 max-h-32 overflow-y-auto rounded-xl border border-border bg-muted/30 p-3">
+                            {slots.map((s) => (
+                              <div key={s.id} className="text-xs text-muted-foreground flex items-center gap-1.5">
+                                <Clock className="w-3 h-3 shrink-0 text-primary/60" />
+                                <span>{s.label}</span>
+                                {s.blockedTimes.length > 0 && (
+                                  <span className="ml-auto text-[10px] text-destructive/70">{s.blockedTimes.length} blocked</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-2">What would you like to block off?</label>
+                          <textarea
+                            value={blockPrompt}
+                            onChange={(e) => setBlockPrompt(e.target.value)}
+                            placeholder={`e.g. "Block Tuesday from 9:00–9:30 AM" or "I have a meeting Friday 2–3 PM"`}
+                            rows={3}
+                            className="w-full text-sm bg-background border border-border rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                          />
+                        </div>
+                        <Button className="w-full" onClick={handleSubmitBlock} disabled={!blockPrompt.trim()}>
+                          <Sparkles className="w-4 h-4 mr-1.5" />
+                          Block These Times
+                        </Button>
+                      </>
+                    )}
+                  </motion.div>
+                )}
+
+                {mode === "block" && blockStep === "processing" && (
+                  <motion.div
+                    key="block-processing"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="p-8 flex flex-col items-center text-center gap-4"
+                  >
+                    <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Loader2 className="w-7 h-7 text-primary animate-spin" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground">Analyzing your request…</p>
+                      <p className="text-sm text-muted-foreground mt-1">Identifying which times to block.</p>
+                    </div>
+                    {blockAiMessage && (
+                      <p className="text-sm text-muted-foreground bg-muted/40 rounded-xl px-4 py-3 text-left w-full whitespace-pre-wrap">
+                        {stripBlockTag(blockAiMessage)}
+                      </p>
+                    )}
+                  </motion.div>
+                )}
+
+                {mode === "block" && blockStep === "confirm" && (
+                  <motion.div
+                    key="block-confirm"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-5 space-y-4"
+                  >
+                    {blockAiMessage && (
+                      <div className="flex gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                          <Bot className="w-3.5 h-3.5 text-primary" />
+                        </div>
+                        <p className="text-sm text-foreground bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 leading-relaxed">{blockAiMessage}</p>
+                      </div>
+                    )}
+                    {pendingBlocks && pendingBlocks.length > 0 ? (
+                      <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 space-y-3">
+                        <p className="text-sm font-semibold text-foreground">Times to be blocked</p>
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                          {pendingBlocks.map((block, i) => (
+                            <div key={i}>
+                              <p className="text-xs font-semibold text-foreground mb-1">{block.slotLabel}</p>
+                              {block.ranges.map((r, j) => (
+                                <div key={j} className="text-xs text-muted-foreground flex items-center gap-1.5 ml-2">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-destructive/60 shrink-0" />
+                                  {fmt12(r.start)} – {fmt12(r.end)}
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                        <Button className="w-full bg-destructive hover:bg-destructive/90" onClick={handleApplyBlocks} isLoading={applying}>
+                          Apply Blocks
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="text-center py-4">
+                        <p className="text-sm text-muted-foreground">No matching times found. Please try rephrasing.</p>
+                        <Button variant="outline" size="sm" className="mt-3" onClick={() => setBlockStep("input")}>
+                          Try Again
+                        </Button>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+
+                {mode === "block" && blockStep === "done" && (
+                  <motion.div
+                    key="block-done"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="p-8 flex flex-col items-center text-center gap-3"
+                  >
+                    <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+                      <CheckCircle2 className="w-7 h-7 text-green-600" />
+                    </div>
+                    <p className="font-bold text-foreground text-lg">Times Blocked!</p>
+                    <p className="text-sm text-muted-foreground">Those time slots will no longer appear for students.</p>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => { setBlockStep("input"); setBlockPrompt(""); setBlockAiMessage(""); setPendingBlocks(null); }}>
+                        Block More
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handleClose}>Close</Button>
+                    </div>
+                  </motion.div>
+                )}
+
               </AnimatePresence>
               <div ref={bottomRef} />
             </div>
 
             {/* Progress dots */}
-            {(step === "days" || step === "times") && (
+            {mode === "create" && (step === "days" || step === "times") && (
               <div className="flex justify-center gap-1.5 py-3 border-t border-border shrink-0">
                 {(["days", "times"] as const).map((s) => (
                   <div
@@ -968,7 +1221,10 @@ export default function Teacher() {
         </AnimatePresence>
       </div>
 
-      <AiAssistant onSlotsCreated={() => { refetchSlots(); refetchBookings(); setTab("slots"); }} />
+      <AiAssistant
+        slots={(slots ?? []).map((s) => ({ ...s, blockedTimes: (s as any).blockedTimes ?? [] }))}
+        onSlotsCreated={() => { refetchSlots(); refetchBookings(); setTab("slots"); }}
+      />
     </div>
   );
 }
