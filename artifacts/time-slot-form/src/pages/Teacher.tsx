@@ -10,14 +10,14 @@ import {
 import {
   Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft,
   AlertCircle, Calendar, ChevronDown, Mail, User, Sparkles, X,
-  Bot, CheckCircle2, ArrowRight, Loader2, Star, KeyRound, Eye, EyeOff,
+  Bot, CheckCircle2, ArrowRight, Loader2, Star, KeyRound, Eye, EyeOff, Ban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
 import { signOutTeacher } from "./TeacherGate";
-import { fmt12, fmtPriority } from "@/lib/booking-utils";
+import { fmt12, fmtPriority, toMins, fromMins } from "@/lib/booking-utils";
 
 interface NewSlotForm { label: string; startTime: string; endTime: string; }
 interface ParsedSlot { label: string; startTime: string; endTime: string; }
@@ -194,20 +194,13 @@ function dayOfSlot(label: string): string {
 
 // ── AI Assistant Popup ───────────────────────────────────────────────────────
 type WizardStep = "days" | "times" | "processing" | "confirm" | "done";
-type BlockStep = "input" | "processing" | "confirm" | "done";
+type BlockStep = "input" | "done";
 type PendingBlock = { slotId: number; slotLabel: string; ranges: { start: string; end: string }[] };
 
-function parseBlocksFromResponse(text: string): PendingBlock[] | null {
-  const match = text.match(/<BLOCK_TIMES>([\s\S]*?)<\/BLOCK_TIMES>/);
-  if (!match) return null;
-  try {
-    const raw = JSON.parse(match[1].trim()) as Array<{ slotId: number; ranges: { start: string; end: string }[] }>;
-    return raw.map((b) => ({ slotId: b.slotId, slotLabel: "", ranges: b.ranges }));
-  } catch { return null; }
-}
-
-function stripBlockTag(text: string) {
-  return text.replace(/<BLOCK_TIMES>[\s\S]*?<\/BLOCK_TIMES>/, "").trim();
+function genTimeOptions(startTime: string, endTime: string, stepMins = 30): string[] {
+  const opts: string[] = [];
+  for (let t = toMins(startTime); t <= toMins(endTime); t += stepMins) opts.push(fromMins(t));
+  return opts;
 }
 
 interface AiAssistantProps {
@@ -229,9 +222,10 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
 
   // Block times state
   const [blockStep, setBlockStep] = useState<BlockStep>("input");
-  const [blockPrompt, setBlockPrompt] = useState("");
-  const [blockAiMessage, setBlockAiMessage] = useState("");
-  const [pendingBlocks, setPendingBlocks] = useState<PendingBlock[] | null>(null);
+  const [blockSelectedSlotId, setBlockSelectedSlotId] = useState<number | null>(null);
+  const [blockRangeStart, setBlockRangeStart] = useState("");
+  const [blockRangeEnd, setBlockRangeEnd] = useState("");
+  const [pendingBlocks, setPendingBlocks] = useState<PendingBlock[]>([]);
   const [applying, setApplying] = useState(false);
 
   const createSlot = useCreateTimeSlot();
@@ -243,13 +237,15 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
     setOpen(false);
   }
 
+  function resetBlockState() {
+    setBlockSelectedSlotId(null); setBlockRangeStart(""); setBlockRangeEnd(""); setPendingBlocks([]);
+  }
+
   function handleOpen() {
     if (step === "done") {
       setStep("days"); setSelectedDays([]); setDayTimes({}); setAiMessage(""); setPendingSlots(null);
     }
-    if (blockStep === "done") {
-      setBlockStep("input"); setBlockPrompt(""); setBlockAiMessage(""); setPendingBlocks(null);
-    }
+    if (blockStep === "done") { setBlockStep("input"); resetBlockState(); }
     setOpen(true);
   }
 
@@ -257,56 +253,31 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
     setMode(m);
   }
 
-  async function handleSubmitBlock() {
-    if (!blockPrompt.trim()) return;
-    setBlockStep("processing");
-    setBlockAiMessage("");
-    try {
-      const res = await fetch("/api/ai/block", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: blockPrompt }],
-          slots: slots.map((s) => ({ id: s.id, label: s.label, startTime: s.startTime, endTime: s.endTime })),
-        }),
-      });
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let full = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = JSON.parse(line.slice(6));
-          if (data.content) { full += data.content; setBlockAiMessage(full); }
-        }
+  function handleAddBlockRange() {
+    if (blockSelectedSlotId === null || !blockRangeStart || !blockRangeEnd) return;
+    if (toMins(blockRangeStart) >= toMins(blockRangeEnd)) return;
+    const slot = slots.find((s) => s.id === blockSelectedSlotId);
+    if (!slot) return;
+    const newRange = { start: blockRangeStart, end: blockRangeEnd };
+    setPendingBlocks((prev) => {
+      const existing = prev.find((b) => b.slotId === blockSelectedSlotId);
+      if (existing) {
+        return prev.map((b) => b.slotId === blockSelectedSlotId ? { ...b, ranges: [...b.ranges, newRange] } : b);
       }
-      const parsed = parseBlocksFromResponse(full);
-      if (parsed && parsed.length > 0) {
-        const enriched = parsed.map((b) => ({
-          ...b,
-          slotLabel: slots.find((s) => s.id === b.slotId)?.label ?? `Slot #${b.slotId}`,
-        }));
-        setPendingBlocks(enriched);
-        setBlockAiMessage(stripBlockTag(full));
-      } else {
-        setBlockAiMessage(stripBlockTag(full) || "No blocks were identified. Please try rephrasing.");
-        setPendingBlocks(null);
-      }
-      setBlockStep("confirm");
-    } catch {
-      setBlockAiMessage("Something went wrong. Please try again.");
-      setBlockStep("confirm");
-    }
+      return [...prev, { slotId: blockSelectedSlotId, slotLabel: slot.label, ranges: [newRange] }];
+    });
+    setBlockRangeStart(""); setBlockRangeEnd("");
+  }
+
+  function handleRemoveBlockRange(slotId: number, rangeIdx: number) {
+    setPendingBlocks((prev) => {
+      const updated = prev.map((b) => b.slotId === slotId ? { ...b, ranges: b.ranges.filter((_, i) => i !== rangeIdx) } : b);
+      return updated.filter((b) => b.ranges.length > 0);
+    });
   }
 
   async function handleApplyBlocks() {
-    if (!pendingBlocks) return;
+    if (pendingBlocks.length === 0) return;
     setApplying(true);
     for (const block of pendingBlocks) {
       await fetch(`/api/timeslots/${block.slotId}/blocked-times`, {
@@ -463,9 +434,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                       {mode === "create" && step === "processing" && "Generating your schedule…"}
                       {mode === "create" && step === "confirm" && "Ready to add slots"}
                       {mode === "create" && step === "done" && "Schedule created!"}
-                      {mode === "block" && blockStep === "input" && "Describe what to block off"}
-                      {mode === "block" && blockStep === "processing" && "Analyzing your request…"}
-                      {mode === "block" && blockStep === "confirm" && "Review the changes"}
+                      {mode === "block" && blockStep === "input" && "Pick times to block off"}
                       {mode === "block" && blockStep === "done" && "Times blocked!"}
                     </p>
                   </div>
@@ -706,7 +675,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -20 }}
-                    className="p-5 space-y-4"
+                    className="p-5 space-y-5"
                   >
                     {slots.length === 0 ? (
                       <div className="text-center py-6 text-muted-foreground">
@@ -715,103 +684,99 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                       </div>
                     ) : (
                       <>
+                        {/* Step 1: pick a day */}
                         <div>
-                          <p className="text-sm font-medium text-foreground mb-2">Current schedule</p>
-                          <div className="space-y-1 max-h-32 overflow-y-auto rounded-xl border border-border bg-muted/30 p-3">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">1. Select a day</p>
+                          <div className="flex flex-wrap gap-2">
                             {slots.map((s) => (
-                              <div key={s.id} className="text-xs text-muted-foreground flex items-center gap-1.5">
-                                <Clock className="w-3 h-3 shrink-0 text-primary/60" />
-                                <span>{s.label}</span>
-                                {s.blockedTimes.length > 0 && (
-                                  <span className="ml-auto text-[10px] text-destructive/70">{s.blockedTimes.length} blocked</span>
-                                )}
-                              </div>
+                              <button
+                                key={s.id}
+                                onClick={() => { setBlockSelectedSlotId(s.id); setBlockRangeStart(""); setBlockRangeEnd(""); }}
+                                className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-all ${
+                                  blockSelectedSlotId === s.id
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "bg-background text-foreground border-border hover:border-primary/50"
+                                }`}
+                              >
+                                {s.label}
+                              </button>
                             ))}
                           </div>
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-foreground mb-2">What would you like to block off?</label>
-                          <textarea
-                            value={blockPrompt}
-                            onChange={(e) => setBlockPrompt(e.target.value)}
-                            placeholder={`e.g. "Block Tuesday from 9:00–9:30 AM" or "I have a meeting Friday 2–3 PM"`}
-                            rows={3}
-                            className="w-full text-sm bg-background border border-border rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary/30 resize-none"
-                          />
-                        </div>
-                        <Button className="w-full" onClick={handleSubmitBlock} disabled={!blockPrompt.trim()}>
-                          <Sparkles className="w-4 h-4 mr-1.5" />
-                          Block These Times
+
+                        {/* Step 2: pick time range */}
+                        {blockSelectedSlotId !== null && (() => {
+                          const slot = slots.find((s) => s.id === blockSelectedSlotId)!;
+                          const timeOpts = genTimeOptions(slot.startTime, slot.endTime, 30);
+                          const endOpts = timeOpts.filter((t) => !blockRangeStart || toMins(t) > toMins(blockRangeStart));
+                          const canAdd = blockRangeStart && blockRangeEnd && toMins(blockRangeStart) < toMins(blockRangeEnd);
+                          return (
+                            <div className="space-y-3">
+                              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">2. Choose the time range</p>
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={blockRangeStart}
+                                  onChange={(e) => { setBlockRangeStart(e.target.value); setBlockRangeEnd(""); }}
+                                  className="flex-1 text-sm bg-background border border-border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-primary/30"
+                                >
+                                  <option value="">From</option>
+                                  {timeOpts.slice(0, -1).map((t) => <option key={t} value={t}>{fmt12(t)}</option>)}
+                                </select>
+                                <span className="text-muted-foreground text-xs shrink-0">to</span>
+                                <select
+                                  value={blockRangeEnd}
+                                  onChange={(e) => setBlockRangeEnd(e.target.value)}
+                                  disabled={!blockRangeStart}
+                                  className="flex-1 text-sm bg-background border border-border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+                                >
+                                  <option value="">To</option>
+                                  {endOpts.map((t) => <option key={t} value={t}>{fmt12(t)}</option>)}
+                                </select>
+                                <button
+                                  onClick={handleAddBlockRange}
+                                  disabled={!canAdd}
+                                  className="shrink-0 w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-40 hover:bg-primary/90 transition-colors"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Pending list */}
+                        {pendingBlocks.length > 0 && (
+                          <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-3 space-y-2">
+                            <p className="text-xs font-semibold text-foreground">Queued blocks</p>
+                            {pendingBlocks.map((block) =>
+                              block.ranges.map((r, j) => (
+                                <div key={`${block.slotId}-${j}`} className="flex items-center justify-between text-xs text-muted-foreground">
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-destructive/60 shrink-0" />
+                                    <span className="font-medium text-foreground">{block.slotLabel}</span>
+                                    <span>·</span>
+                                    <span>{fmt12(r.start)} – {fmt12(r.end)}</span>
+                                  </span>
+                                  <button onClick={() => handleRemoveBlockRange(block.slotId, j)} className="ml-2 text-destructive/60 hover:text-destructive transition-colors">
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+
+                        {/* Apply button */}
+                        <Button
+                          className="w-full"
+                          onClick={handleApplyBlocks}
+                          isLoading={applying}
+                          disabled={pendingBlocks.length === 0}
+                        >
+                          <Ban className="w-4 h-4 mr-1.5" />
+                          Block {pendingBlocks.reduce((n, b) => n + b.ranges.length, 0) || ""} {pendingBlocks.reduce((n, b) => n + b.ranges.length, 0) === 1 ? "Range" : "Ranges"}
                         </Button>
                       </>
-                    )}
-                  </motion.div>
-                )}
-
-                {mode === "block" && blockStep === "processing" && (
-                  <motion.div
-                    key="block-processing"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="p-8 flex flex-col items-center text-center gap-4"
-                  >
-                    <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Loader2 className="w-7 h-7 text-primary animate-spin" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-foreground">Analyzing your request…</p>
-                      <p className="text-sm text-muted-foreground mt-1">Identifying which times to block.</p>
-                    </div>
-                    {blockAiMessage && (
-                      <p className="text-sm text-muted-foreground bg-muted/40 rounded-xl px-4 py-3 text-left w-full whitespace-pre-wrap">
-                        {stripBlockTag(blockAiMessage)}
-                      </p>
-                    )}
-                  </motion.div>
-                )}
-
-                {mode === "block" && blockStep === "confirm" && (
-                  <motion.div
-                    key="block-confirm"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-5 space-y-4"
-                  >
-                    {blockAiMessage && (
-                      <div className="flex gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                          <Bot className="w-3.5 h-3.5 text-primary" />
-                        </div>
-                        <p className="text-sm text-foreground bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 leading-relaxed">{blockAiMessage}</p>
-                      </div>
-                    )}
-                    {pendingBlocks && pendingBlocks.length > 0 ? (
-                      <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 space-y-3">
-                        <p className="text-sm font-semibold text-foreground">Times to be blocked</p>
-                        <div className="space-y-2 max-h-40 overflow-y-auto">
-                          {pendingBlocks.map((block, i) => (
-                            <div key={i}>
-                              <p className="text-xs font-semibold text-foreground mb-1">{block.slotLabel}</p>
-                              {block.ranges.map((r, j) => (
-                                <div key={j} className="text-xs text-muted-foreground flex items-center gap-1.5 ml-2">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-destructive/60 shrink-0" />
-                                  {fmt12(r.start)} – {fmt12(r.end)}
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                        <Button className="w-full bg-destructive hover:bg-destructive/90" onClick={handleApplyBlocks} isLoading={applying}>
-                          Apply Blocks
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="text-center py-4">
-                        <p className="text-sm text-muted-foreground">No matching times found. Please try rephrasing.</p>
-                        <Button variant="outline" className="mt-3" onClick={() => setBlockStep("input")}>
-                          Try Again
-                        </Button>
-                      </div>
                     )}
                   </motion.div>
                 )}
@@ -829,7 +794,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     <p className="font-bold text-foreground text-lg">Times Blocked!</p>
                     <p className="text-sm text-muted-foreground">Those time slots will no longer appear for students.</p>
                     <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => { setBlockStep("input"); setBlockPrompt(""); setBlockAiMessage(""); setPendingBlocks(null); }}>
+                      <Button variant="outline" onClick={() => { setBlockStep("input"); resetBlockState(); }}>
                         Block More
                       </Button>
                       <Button variant="outline" onClick={handleClose}>Close</Button>
