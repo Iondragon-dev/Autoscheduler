@@ -195,7 +195,22 @@ function dayOfSlot(label: string): string {
 // ── AI Assistant Popup ───────────────────────────────────────────────────────
 type WizardStep = "days" | "times" | "processing" | "confirm" | "done";
 type BlockStep = "input" | "done";
+type EditStep = "input" | "processing" | "confirm" | "done";
 type PendingBlock = { slotId: number; slotLabel: string; ranges: { start: string; end: string }[] };
+type EditOp =
+  | { op: "create"; label: string; startTime: string; endTime: string }
+  | { op: "update"; slotId: number; label?: string; startTime?: string; endTime?: string }
+  | { op: "delete"; slotId: number };
+
+function parseEditsFromResponse(text: string): EditOp[] | null {
+  const match = text.match(/<EDIT_SLOTS>([\s\S]*?)<\/EDIT_SLOTS>/);
+  if (!match) return null;
+  try { return JSON.parse(match[1].trim()) as EditOp[]; } catch { return null; }
+}
+
+function stripEditTag(text: string) {
+  return text.replace(/<EDIT_SLOTS>[\s\S]*?<\/EDIT_SLOTS>/, "").trim();
+}
 
 function genTimeOptions(startTime: string, endTime: string, stepMins = 30): string[] {
   const opts: string[] = [];
@@ -210,7 +225,7 @@ interface AiAssistantProps {
 
 function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<"create" | "block">("create");
+  const [mode, setMode] = useState<"create" | "block" | "edit">("create");
 
   // Create schedule wizard state
   const [step, setStep] = useState<WizardStep>("days");
@@ -219,6 +234,13 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
   const [aiMessage, setAiMessage] = useState("");
   const [pendingSlots, setPendingSlots] = useState<ParsedSlot[] | null>(null);
   const [creating, setCreating] = useState(false);
+
+  // Edit schedule state
+  const [editStep, setEditStep] = useState<EditStep>("input");
+  const [editPrompt, setEditPrompt] = useState("");
+  const [editAiMessage, setEditAiMessage] = useState("");
+  const [pendingEdits, setPendingEdits] = useState<EditOp[] | null>(null);
+  const [applyingEdits, setApplyingEdits] = useState(false);
 
   // Block times state
   const [blockStep, setBlockStep] = useState<BlockStep>("input");
@@ -241,16 +263,90 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
     setBlockSelectedSlotId(null); setBlockRangeStart(""); setBlockRangeEnd(""); setPendingBlocks([]);
   }
 
+  function resetEditState() {
+    setEditPrompt(""); setEditAiMessage(""); setPendingEdits(null);
+  }
+
   function handleOpen() {
     if (step === "done") {
       setStep("days"); setSelectedDays([]); setDayTimes({}); setAiMessage(""); setPendingSlots(null);
     }
     if (blockStep === "done") { setBlockStep("input"); resetBlockState(); }
+    if (editStep === "done") { setEditStep("input"); resetEditState(); }
     setOpen(true);
   }
 
-  function switchMode(m: "create" | "block") {
+  function switchMode(m: "create" | "block" | "edit") {
     setMode(m);
+  }
+
+  async function handleSubmitEdit() {
+    if (!editPrompt.trim()) return;
+    setEditStep("processing");
+    setEditAiMessage("");
+    try {
+      const res = await fetch("/api/ai/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: editPrompt }],
+          slots: slots.map((s) => ({ id: s.id, label: s.label, startTime: s.startTime, endTime: s.endTime })),
+        }),
+      });
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let full = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = JSON.parse(line.slice(6));
+          if (data.content) { full += data.content; setEditAiMessage(full); }
+        }
+      }
+      const parsed = parseEditsFromResponse(full);
+      setPendingEdits(parsed && parsed.length > 0 ? parsed : []);
+      setEditAiMessage(stripEditTag(full) || "Ready to apply your changes.");
+      setEditStep("confirm");
+    } catch {
+      setEditAiMessage("Something went wrong. Please try again.");
+      setEditStep("confirm");
+    }
+  }
+
+  async function handleApplyEdits() {
+    if (!pendingEdits || pendingEdits.length === 0) return;
+    setApplyingEdits(true);
+    for (const op of pendingEdits) {
+      if (op.op === "create") {
+        await fetch("/api/timeslots", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label: op.label, startTime: op.startTime, endTime: op.endTime }),
+        });
+      } else if (op.op === "update") {
+        const { slotId, ...updates } = op;
+        const body: Record<string, string> = {};
+        if (updates.label) body.label = updates.label;
+        if (updates.startTime) body.startTime = updates.startTime;
+        if (updates.endTime) body.endTime = updates.endTime;
+        await fetch(`/api/timeslots/${slotId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      } else if (op.op === "delete") {
+        await fetch(`/api/timeslots/${op.slotId}`, { method: "DELETE" });
+      }
+    }
+    setApplyingEdits(false);
+    setEditStep("done");
+    onSlotsCreated();
   }
 
   function handleAddBlockRange() {
@@ -434,6 +530,10 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                       {mode === "create" && step === "processing" && "Generating your schedule…"}
                       {mode === "create" && step === "confirm" && "Ready to add slots"}
                       {mode === "create" && step === "done" && "Schedule created!"}
+                      {mode === "edit" && editStep === "input" && "Describe your changes"}
+                      {mode === "edit" && editStep === "processing" && "Analyzing your request…"}
+                      {mode === "edit" && editStep === "confirm" && "Review the changes"}
+                      {mode === "edit" && editStep === "done" && "Schedule updated!"}
                       {mode === "block" && blockStep === "input" && "Pick times to block off"}
                       {mode === "block" && blockStep === "done" && "Times blocked!"}
                     </p>
@@ -445,18 +545,18 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
               </div>
               {/* Mode tabs */}
               <div className="flex gap-1 -mb-px">
-                {(["create", "block"] as const).map((m) => (
+                {(["create", "edit", "block"] as const).map((m) => (
                   <button
                     key={m}
                     onClick={() => switchMode(m)}
                     className={cn(
-                      "px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-all",
+                      "px-3 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-all",
                       mode === m
                         ? "border-border bg-card text-foreground"
                         : "border-transparent text-muted-foreground hover:text-foreground"
                     )}
                   >
-                    {m === "create" ? "Create Schedule" : "Block Times"}
+                    {m === "create" ? "Create" : m === "edit" ? "Edit" : "Block"}
                   </button>
                 ))}
               </div>
@@ -665,6 +765,155 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     <p className="font-bold text-foreground text-lg">Schedule Created!</p>
                     <p className="text-sm text-muted-foreground">Your time slots are ready for student bookings.</p>
                     <Button variant="outline" onClick={handleClose}>Close</Button>
+                  </motion.div>
+                )}
+
+                {/* ── Edit Schedule mode ── */}
+                {mode === "edit" && editStep === "input" && (
+                  <motion.div
+                    key="edit-input"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="p-5 space-y-4"
+                  >
+                    {slots.length === 0 ? (
+                      <div className="text-center py-6 text-muted-foreground">
+                        <p className="text-sm">No schedule set up yet.</p>
+                        <p className="text-xs mt-1">Use the Create tab first to set up your schedule.</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <p className="text-sm font-medium text-foreground mb-2">Current schedule</p>
+                          <div className="space-y-1 max-h-28 overflow-y-auto rounded-xl border border-border bg-muted/30 p-3">
+                            {slots.map((s) => (
+                              <div key={s.id} className="text-xs text-muted-foreground flex items-center gap-1.5">
+                                <Clock className="w-3 h-3 shrink-0 text-primary/60" />
+                                <span>{s.label}</span>
+                                <span className="ml-auto text-[10px] text-muted-foreground/60">#{s.id}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-2">What would you like to change?</label>
+                          <textarea
+                            value={editPrompt}
+                            onChange={(e) => setEditPrompt(e.target.value)}
+                            placeholder={`e.g. "Extend Tuesday to 3 PM", "Remove Friday", "Add a Thursday 10–11 AM slot"`}
+                            rows={3}
+                            className="w-full text-sm bg-background border border-border rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                          />
+                        </div>
+                        <Button className="w-full" onClick={handleSubmitEdit} disabled={!editPrompt.trim()}>
+                          <Sparkles className="w-4 h-4 mr-1.5" />
+                          Apply Changes
+                        </Button>
+                      </>
+                    )}
+                  </motion.div>
+                )}
+
+                {mode === "edit" && editStep === "processing" && (
+                  <motion.div
+                    key="edit-processing"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="p-8 flex flex-col items-center text-center gap-4"
+                  >
+                    <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Loader2 className="w-7 h-7 text-primary animate-spin" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground">Analyzing your request…</p>
+                      <p className="text-sm text-muted-foreground mt-1">Figuring out what needs to change.</p>
+                    </div>
+                    {editAiMessage && (
+                      <p className="text-sm text-muted-foreground bg-muted/40 rounded-xl px-4 py-3 text-left w-full whitespace-pre-wrap">
+                        {stripEditTag(editAiMessage)}
+                      </p>
+                    )}
+                  </motion.div>
+                )}
+
+                {mode === "edit" && editStep === "confirm" && (
+                  <motion.div
+                    key="edit-confirm"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-5 space-y-4"
+                  >
+                    {editAiMessage && (
+                      <div className="flex gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                          <Bot className="w-3.5 h-3.5 text-primary" />
+                        </div>
+                        <p className="text-sm text-foreground bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 leading-relaxed">{editAiMessage}</p>
+                      </div>
+                    )}
+                    {pendingEdits && pendingEdits.length > 0 ? (
+                      <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-3">
+                        <p className="text-sm font-semibold text-foreground">Proposed changes</p>
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {pendingEdits.map((op, i) => (
+                            <div key={i} className="flex items-start gap-2 text-xs">
+                              <span className={cn(
+                                "shrink-0 mt-0.5 px-1.5 py-0.5 rounded font-semibold uppercase text-[10px]",
+                                op.op === "create" && "bg-green-100 text-green-700",
+                                op.op === "update" && "bg-blue-100 text-blue-700",
+                                op.op === "delete" && "bg-red-100 text-red-700",
+                              )}>
+                                {op.op}
+                              </span>
+                              <span className="text-muted-foreground leading-relaxed">
+                                {op.op === "create" && `${op.label} (${fmt12(op.startTime)} – ${fmt12(op.endTime)})`}
+                                {op.op === "update" && (() => {
+                                  const slot = slots.find((s) => s.id === op.slotId);
+                                  const parts: string[] = [];
+                                  if (op.label) parts.push(`rename to "${op.label}"`);
+                                  if (op.startTime) parts.push(`start ${fmt12(op.startTime)}`);
+                                  if (op.endTime) parts.push(`end ${fmt12(op.endTime)}`);
+                                  return `${slot?.label ?? `Slot #${op.slotId}`}: ${parts.join(", ")}`;
+                                })()}
+                                {op.op === "delete" && `Remove ${slots.find((s) => s.id === op.slotId)?.label ?? `Slot #${op.slotId}`}`}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <Button className="w-full" onClick={handleApplyEdits} isLoading={applyingEdits}>
+                          Apply Changes
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="text-center py-4">
+                        <p className="text-sm text-muted-foreground">No changes were identified. Please try rephrasing.</p>
+                        <Button variant="outline" className="mt-3" onClick={() => setEditStep("input")}>
+                          Try Again
+                        </Button>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+
+                {mode === "edit" && editStep === "done" && (
+                  <motion.div
+                    key="edit-done"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="p-8 flex flex-col items-center text-center gap-3"
+                  >
+                    <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+                      <CheckCircle2 className="w-7 h-7 text-green-600" />
+                    </div>
+                    <p className="font-bold text-foreground text-lg">Schedule Updated!</p>
+                    <p className="text-sm text-muted-foreground">Your changes have been saved.</p>
+                    <div className="flex gap-2">
+                      <Button variant="outline" onClick={() => { setEditStep("input"); resetEditState(); }}>
+                        Edit More
+                      </Button>
+                      <Button variant="outline" onClick={handleClose}>Close</Button>
+                    </div>
                   </motion.div>
                 )}
 

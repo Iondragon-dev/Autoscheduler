@@ -85,6 +85,53 @@ router.post("/ai/schedule", async (req, res) => {
   await streamAi(CREATE_SYSTEM_PROMPT, messages, res);
 });
 
+const EDIT_SYSTEM_PROMPT = `You are a scheduling assistant helping a teacher edit their existing weekly schedule.
+
+The teacher's current schedule will be provided as JSON context, then the teacher will describe the changes they want to make.
+
+Your job:
+1. Briefly acknowledge the changes in a warm, one-sentence reply.
+2. Output an EDIT_SLOTS block in EXACTLY this format:
+
+<EDIT_SLOTS>
+[
+  { "op": "create", "label": "Thursday 9:00 AM – 11:00 AM", "startTime": "09:00", "endTime": "11:00" },
+  { "op": "update", "slotId": 3, "label": "Tuesday 8:00 AM – 12:00 PM", "startTime": "08:00", "endTime": "12:00" },
+  { "op": "delete", "slotId": 2 }
+]
+</EDIT_SLOTS>
+
+Rules for the JSON:
+- "op" must be exactly "create", "update", or "delete"
+- For "create": include label (human-readable, e.g. "Friday 1:00 PM – 3:00 PM"), startTime, endTime in 24-hour HH:MM
+- For "update": include slotId (from the provided schedule) and any of label/startTime/endTime you are changing
+- For "delete": include only slotId
+- Only reference slotIds that exist in the provided schedule
+- Omit operations that aren't needed — output an empty array [] if nothing changes
+- Use 24-hour HH:MM format for startTime and endTime
+
+After the EDIT_SLOTS block, add one short friendly closing sentence.`;
+
+router.post("/ai/edit", async (req, res) => {
+  const { messages, slots } = req.body as {
+    messages: { role: string; content: string }[];
+    slots: Array<{ id: number; label: string; startTime: string; endTime: string }>;
+  };
+  if (!Array.isArray(messages)) { res.status(400).json({ message: "messages must be an array" }); return; }
+
+  const scheduleContext = slots.length
+    ? `Current schedule (use these slot IDs for updates/deletes):\n${JSON.stringify(slots.map((s) => ({ slotId: s.id, label: s.label, startTime: s.startTime, endTime: s.endTime })), null, 2)}`
+    : "No slots are currently set up.";
+
+  const messagesWithContext = [
+    { role: "user" as const, content: scheduleContext },
+    { role: "assistant" as const, content: "Got it! I can see your current schedule. What changes would you like to make?" },
+    ...messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+  ];
+
+  await streamAi(EDIT_SYSTEM_PROMPT, messagesWithContext, res);
+});
+
 router.post("/ai/block", async (req, res) => {
   const { messages, slots } = req.body as {
     messages: { role: string; content: string }[];
