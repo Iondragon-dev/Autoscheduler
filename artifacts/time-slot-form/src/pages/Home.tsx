@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Calendar, Clock, User, Mail, AlertCircle, ArrowRight, Star, X } from "lucide-react";
 import { useGetTimeSlots, useCreateBooking } from "@workspace/api-client-react";
-import type { Booking, TimeSlot } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { Booking, TimeSlot } from "@workspace/api-client-react";
 import { Link } from "wouter";
 
 import { useBookingForm } from "@/hooks/use-booking-form";

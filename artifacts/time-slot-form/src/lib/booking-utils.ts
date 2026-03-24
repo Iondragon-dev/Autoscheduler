@@ -1,4 +1,4 @@
-import type { TimeSlot } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { TimeSlot } from "@workspace/api-client-react";
 
 export function toMins(t: string) {
   const [h, m] = t.split(":").map(Number);

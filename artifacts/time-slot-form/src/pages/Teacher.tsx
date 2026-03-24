@@ -400,7 +400,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
     setCreating(true);
     for (const slot of pendingSlots) {
       await new Promise<void>((resolve) =>
-        createSlot.mutate({ data: slot }, { onSuccess: resolve, onError: resolve })
+        createSlot.mutate({ data: slot }, { onSuccess: () => resolve(), onError: () => resolve() })
       );
     }
     setCreating(false);
@@ -675,7 +675,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     ) : (
                       <div className="text-center py-4">
                         <p className="text-sm text-muted-foreground">No slots could be generated. Please try again.</p>
-                        <Button variant="outline" size="sm" className="mt-3" onClick={() => setStep("days")}>
+                        <Button variant="outline" className="mt-3" onClick={() => setStep("days")}>
                           Start Over
                         </Button>
                       </div>
@@ -695,7 +695,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     </div>
                     <p className="font-bold text-foreground text-lg">Schedule Created!</p>
                     <p className="text-sm text-muted-foreground">Your time slots are ready for student bookings.</p>
-                    <Button variant="outline" size="sm" onClick={handleClose}>Close</Button>
+                    <Button variant="outline" onClick={handleClose}>Close</Button>
                   </motion.div>
                 )}
 
@@ -808,7 +808,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     ) : (
                       <div className="text-center py-4">
                         <p className="text-sm text-muted-foreground">No matching times found. Please try rephrasing.</p>
-                        <Button variant="outline" size="sm" className="mt-3" onClick={() => setBlockStep("input")}>
+                        <Button variant="outline" className="mt-3" onClick={() => setBlockStep("input")}>
                           Try Again
                         </Button>
                       </div>
@@ -829,10 +829,10 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     <p className="font-bold text-foreground text-lg">Times Blocked!</p>
                     <p className="text-sm text-muted-foreground">Those time slots will no longer appear for students.</p>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => { setBlockStep("input"); setBlockPrompt(""); setBlockAiMessage(""); setPendingBlocks(null); }}>
+                      <Button variant="outline" onClick={() => { setBlockStep("input"); setBlockPrompt(""); setBlockAiMessage(""); setPendingBlocks(null); }}>
                         Block More
                       </Button>
-                      <Button variant="outline" size="sm" onClick={handleClose}>Close</Button>
+                      <Button variant="outline" onClick={handleClose}>Close</Button>
                     </div>
                   </motion.div>
                 )}
@@ -1096,7 +1096,7 @@ export default function Teacher() {
               <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-lg p-5">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-bold text-foreground text-lg">Available Slots</h2>
-                  <Button size="sm" onClick={() => { setShowAddForm((v) => !v); setFormError(null); }} variant={showAddForm ? "outline" : "default"}>
+                  <Button onClick={() => { setShowAddForm((v) => !v); setFormError(null); }} variant={showAddForm ? "outline" : "default"}>
                     <Plus className="w-4 h-4 mr-1.5" />{showAddForm ? "Cancel" : "Add Slot"}
                   </Button>
                 </div>
@@ -1222,7 +1222,7 @@ export default function Teacher() {
       </div>
 
       <AiAssistant
-        slots={(slots ?? []).map((s) => ({ ...s, blockedTimes: (s as any).blockedTimes ?? [] }))}
+        slots={(slots ?? []).map((s) => ({ ...s, blockedTimes: s.blockedTimes ?? [] }))}
         onSlotsCreated={() => { refetchSlots(); refetchBookings(); setTab("slots"); }}
       />
     </div>
