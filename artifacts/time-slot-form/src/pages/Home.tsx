@@ -13,14 +13,6 @@ import { fmt12, fmtPriority, makeValue, toMins } from "@/lib/booking-utils";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const DURATIONS = [
-  { mins: 15, label: "15 min" },
-  { mins: 30, label: "30 min" },
-  { mins: 45, label: "45 min" },
-  { mins: 60, label: "1 hour" },
-  { mins: 90, label: "1.5 hrs" },
-  { mins: 120, label: "2 hours" },
-];
 
 const PRIORITY_META = [
   { rank: 1, label: "1st Choice", starColor: "text-amber-400", fillStar: true, activeBg: "bg-amber-50 border-amber-400", badge: "bg-amber-400 text-white" },
@@ -34,7 +26,6 @@ export default function Home() {
   const { data: slots, isLoading: isLoadingSlots, isError: isSlotsError } = useGetTimeSlots();
   const createBooking = useCreateBooking();
 
-  const [durationMins, setDurationMins] = useState(60);
   const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
   const [customStart, setCustomStart] = useState("");
@@ -60,7 +51,7 @@ export default function Home() {
     if (selectedSlotId === null || !ids.includes(selectedSlotId)) {
       setSelectedSlotId(ids[0]);
     }
-  }, [slotsWithBlocks.map((s) => s.id).join(","), durationMins]);
+  }, [slotsWithBlocks.map((s) => s.id).join(",")]);
 
   // Reset custom time inputs when the selected slot changes
   useEffect(() => { setCustomStart(""); setCustomEnd(""); }, [selectedSlotId]);
@@ -134,46 +125,16 @@ export default function Home() {
               <div className="mb-10 text-center">
                 <h1 className="text-4xl font-display font-bold text-foreground mb-3">Book a Session</h1>
                 <p className="text-lg text-muted-foreground">
-                  Choose a session length, then pick your 3 preferred times from any available day.
+                  Pick 3 preferred times from any available day, then submit your details.
                 </p>
               </div>
 
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-10">
 
-                {/* Step 1: Duration */}
-                <div>
-                  <div className="flex items-center space-x-2 mb-4">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">1</div>
-                    <h2 className="text-xl font-bold font-display">Session Length</h2>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {DURATIONS.map(({ mins, label }) => (
-                      <button
-                        key={mins}
-                        type="button"
-                        onClick={() => {
-                          setDurationMins(mins);
-                          priorityFields.forEach((f) => setValue(f, "", { shouldValidate: false }));
-                        }}
-                        className={cn(
-                          "px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all",
-                          durationMins === mins
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 text-foreground"
-                        )}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="h-px w-full bg-gradient-to-r from-transparent via-border to-transparent" />
-
-                {/* Step 2: Ranked preference picking */}
+                {/* Step 1: Ranked preference picking */}
                 <div>
                   <div className="flex items-center space-x-2 mb-1">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">2</div>
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">1</div>
                     <h2 className="text-xl font-bold font-display">Rank Your Preferred Times</h2>
                   </div>
                   <p className="text-sm text-muted-foreground mb-5 ml-10">
@@ -377,10 +338,10 @@ export default function Home() {
 
                 <div className="h-px w-full bg-gradient-to-r from-transparent via-border to-transparent" />
 
-                {/* Step 3: Personal Details */}
+                {/* Step 2: Personal Details */}
                 <div className="space-y-5">
                   <div className="flex items-center space-x-2 mb-4">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">3</div>
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">2</div>
                     <h2 className="text-xl font-bold font-display">Your Details</h2>
                   </div>
 
