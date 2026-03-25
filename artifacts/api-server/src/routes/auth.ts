@@ -55,25 +55,4 @@ router.put("/auth/teacher/passcode", async (req, res) => {
   res.json({ ok: true });
 });
 
-const SHOW_LABELS_KEY = "show_slot_labels";
-
-router.get("/settings/show-labels", async (_req, res) => {
-  const row = await db.select().from(settingsTable).where(eq(settingsTable.key, SHOW_LABELS_KEY)).limit(1);
-  const value = row[0]?.value ?? "true";
-  res.json({ showLabels: value === "true" });
-});
-
-router.patch("/settings/show-labels", async (req, res) => {
-  const { showLabels } = req.body ?? {};
-  if (typeof showLabels !== "boolean") {
-    res.status(400).json({ message: "showLabels (boolean) required" });
-    return;
-  }
-  await db
-    .insert(settingsTable)
-    .values({ key: SHOW_LABELS_KEY, value: String(showLabels) })
-    .onConflictDoUpdate({ target: settingsTable.key, set: { value: String(showLabels) } });
-  res.json({ ok: true });
-});
-
 export default router;

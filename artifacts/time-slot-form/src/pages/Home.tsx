@@ -30,15 +30,6 @@ export default function Home() {
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
-  const [showLabels, setShowLabels] = useState(true);
-
-  useEffect(() => {
-    fetch(`${import.meta.env.BASE_URL}api/settings/show-labels`)
-      .then((r) => r.json())
-      .then((d) => setShowLabels(d.showLabels ?? true))
-      .catch(() => {});
-  }, []);
-
   const form = useBookingForm();
   const { register, handleSubmit, formState: { errors }, watch, setValue } = form;
 
@@ -230,7 +221,7 @@ export default function Home() {
                                   : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 text-foreground"
                               )}
                             >
-                              {showLabels && <span>{slot.label}</span>}
+                              <span>{slot.label}</span>
                               <span className={cn("text-[10px] font-normal", isSelected ? "text-primary/70" : "text-muted-foreground")}>
                                 {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
                               </span>
@@ -271,7 +262,7 @@ export default function Home() {
                             >
                               <div>
                                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">
-                                  {showLabels ? `Enter your time — ${slot.label.split(" ")[0]}` : "Enter your time"}
+                                  Enter your time — {slot.label.split(" ")[0]}
                                 </p>
                                 <p className="text-[11px] text-muted-foreground">
                                   Available window: {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
