@@ -10,7 +10,7 @@ import {
 import {
   Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft,
   AlertCircle, Calendar, ChevronDown, Mail, User, Sparkles, X,
-  Bot, CheckCircle2, ArrowRight, Loader2, Star, KeyRound, Eye, EyeOff, Ban,
+  Bot, CheckCircle2, ArrowRight, Loader2, KeyRound, Eye, EyeOff, Ban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1230,13 +1230,18 @@ function WeeklyCalendar() {
                                           <p className="text-xs text-muted-foreground truncate">{b.email}</p>
                                         </div>
                                       </div>
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {[b.priority1, b.priority2, b.priority3].map((p, pi) => (
-                                          <div key={pi} className="flex items-center gap-1 text-xs bg-background rounded-md px-1.5 py-0.5 border border-border/50">
-                                            <Star className={cn("w-2.5 h-2.5", PRIORITY_COLORS[pi], pi === 0 ? "fill-current" : "")} />
-                                            <span className="font-medium">{fmtPriority(p, slots)}</span>
-                                          </div>
-                                        ))}
+                                      <div className="space-y-1">
+                                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">3 Priority Choices</p>
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {[b.priority1, b.priority2, b.priority3].map((p, pi) => (
+                                            <div key={pi} className="flex items-center gap-1 text-xs bg-background rounded-md px-1.5 py-0.5 border border-border/50">
+                                              <span className={cn("font-bold text-[10px] shrink-0", PRIORITY_COLORS[pi])}>
+                                                {["1st", "2nd", "3rd"][pi]}
+                                              </span>
+                                              <span className="font-medium">{fmtPriority(p, slots)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
                                       </div>
                                     </motion.div>
                                   ))}
@@ -1461,13 +1466,18 @@ export default function Teacher() {
                                         </div>
                                         <div className="text-xs text-muted-foreground shrink-0">{new Date(b.createdAt).toLocaleDateString()}</div>
                                       </div>
-                                      <div className="flex flex-wrap gap-2 pt-1 border-t border-border/40">
-                                        {[b.priority1, b.priority2, b.priority3].map((p, pi) => (
-                                          <div key={pi} className="flex items-center gap-1 text-xs bg-background rounded-lg px-2 py-1 border border-border/50">
-                                            <Star className={cn("w-3 h-3", PRIORITY_COLORS[pi], pi === 0 ? "fill-current" : "")} />
-                                            <span className="font-medium text-foreground">{fmtPriority(p, slots)}</span>
-                                          </div>
-                                        ))}
+                                      <div className="pt-1 border-t border-border/40 space-y-1.5">
+                                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">3 Priority Choices</p>
+                                        <div className="flex flex-wrap gap-2">
+                                          {[b.priority1, b.priority2, b.priority3].map((p, pi) => (
+                                            <div key={pi} className="flex items-center gap-1.5 text-xs bg-background rounded-lg px-2 py-1 border border-border/50">
+                                              <span className={cn("font-bold text-[10px] shrink-0 tabular-nums", PRIORITY_COLORS[pi])}>
+                                                {["1st", "2nd", "3rd"][pi]}
+                                              </span>
+                                              <span className="font-medium text-foreground">{fmtPriority(p, slots)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
                                       </div>
                                     </motion.div>
                                   ))}
