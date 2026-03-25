@@ -1294,6 +1294,23 @@ export default function Teacher() {
   const [form, setForm] = useState<NewSlotForm>({ label: "", startTime: "", endTime: "" });
   const [formError, setFormError] = useState<string | null>(null);
   const [showPasscodeDialog, setShowPasscodeDialog] = useState(false);
+  const [showLabels, setShowLabels] = useState(true);
+
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}api/settings/show-labels`)
+      .then((r) => r.json())
+      .then((d) => setShowLabels(d.showLabels ?? true))
+      .catch(() => {});
+  }, []);
+
+  const handleToggleShowLabels = async (val: boolean) => {
+    setShowLabels(val);
+    await fetch(`${import.meta.env.BASE_URL}api/settings/show-labels`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ showLabels: val }),
+    });
+  };
 
   const handleAddSlot = () => {
     if (!form.label.trim() || !form.startTime || !form.endTime) {
@@ -1404,11 +1421,29 @@ export default function Teacher() {
           {tab === "slots" ? (
             <motion.div key="slots" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.25 }}>
               <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-lg p-5">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-3">
                   <h2 className="font-bold text-foreground text-lg">Available Slots</h2>
                   <Button onClick={() => { setShowAddForm((v) => !v); setFormError(null); }} variant={showAddForm ? "outline" : "default"}>
                     <Plus className="w-4 h-4 mr-1.5" />{showAddForm ? "Cancel" : "Add Slot"}
                   </Button>
+                </div>
+                <div className="flex items-center justify-between mb-4 px-1 py-2 rounded-lg bg-muted/30 border border-border/40">
+                  <span className="text-xs text-muted-foreground font-medium pl-2">Show slot labels in student form</span>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleShowLabels(!showLabels)}
+                    className={cn(
+                      "relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none mr-2",
+                      showLabels ? "bg-primary" : "bg-muted-foreground/30"
+                    )}
+                    role="switch"
+                    aria-checked={showLabels}
+                  >
+                    <span className={cn(
+                      "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200",
+                      showLabels ? "translate-x-4" : "translate-x-0"
+                    )} />
+                  </button>
                 </div>
 
                 <AnimatePresence>
