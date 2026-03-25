@@ -9,7 +9,7 @@ import { useBookingForm } from "@/hooks/use-booking-form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { fmt12, fmtPriority, getSubBlocks } from "@/lib/booking-utils";
+import { fmt12, fmtPriority, getSubBlocks, makeValue, toMins } from "@/lib/booking-utils";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -37,6 +37,8 @@ export default function Home() {
   const [durationMins, setDurationMins] = useState(60);
   const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
 
   const form = useBookingForm();
   const { register, handleSubmit, formState: { errors }, watch, setValue } = form;
@@ -60,6 +62,9 @@ export default function Home() {
       setSelectedSlotId(ids[0]);
     }
   }, [slotsWithBlocks.map((s) => s.id).join(","), durationMins]);
+
+  // Reset custom time inputs when the selected slot changes
+  useEffect(() => { setCustomStart(""); setCustomEnd(""); }, [selectedSlotId]);
 
   // Which priority index to fill next (0, 1, or 2; or null if all filled)
   const nextSlot = priorities.findIndex((p) => !p);
@@ -330,6 +335,79 @@ export default function Home() {
                                   );
                                 })}
                               </div>
+
+                              {/* Custom time entry */}
+                              {(() => {
+                                const customValue = customStart && customEnd ? makeValue(slot.id, customStart, customEnd) : "";
+                                const customAssignedIdx = customValue ? priorities.indexOf(customValue) : -1;
+                                const isCustomAssigned = customAssignedIdx !== -1;
+                                const customMeta = isCustomAssigned ? PRIORITY_META[customAssignedIdx] : null;
+                                const isCustomValid = !!(
+                                  customStart && customEnd &&
+                                  toMins(customStart) >= toMins(slot.startTime) &&
+                                  toMins(customEnd) <= toMins(slot.endTime) &&
+                                  toMins(customStart) < toMins(customEnd)
+                                );
+                                const canAddCustom = isCustomValid && !isCustomAssigned && nextSlot !== -1;
+                                return (
+                                  <div className="mt-3 pt-3 border-t border-border/50">
+                                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                      Or enter a custom time
+                                    </p>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <div className="flex items-center gap-1.5">
+                                        <input
+                                          type="time"
+                                          value={customStart}
+                                          min={slot.startTime}
+                                          max={slot.endTime}
+                                          onChange={(e) => { setCustomStart(e.target.value); setCustomEnd(""); }}
+                                          className="text-sm bg-background border border-border rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
+                                        />
+                                        <span className="text-muted-foreground text-xs">to</span>
+                                        <input
+                                          type="time"
+                                          value={customEnd}
+                                          min={customStart || slot.startTime}
+                                          max={slot.endTime}
+                                          disabled={!customStart}
+                                          onChange={(e) => setCustomEnd(e.target.value)}
+                                          className="text-sm bg-background border border-border rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-40"
+                                        />
+                                      </div>
+                                      {isCustomAssigned ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleBlockClick(customValue, slot.id)}
+                                          className={cn("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 shadow-sm", customMeta!.activeBg)}
+                                        >
+                                          <span className={cn("font-bold", customMeta!.starColor)}>{customAssignedIdx + 1}</span>
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          disabled={!canAddCustom}
+                                          onClick={() => { if (canAddCustom) handleBlockClick(customValue, slot.id); }}
+                                          className={cn(
+                                            "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all",
+                                            canAddCustom
+                                              ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90"
+                                              : "bg-muted border-border text-muted-foreground/50 cursor-not-allowed"
+                                          )}
+                                        >
+                                          + Add
+                                        </button>
+                                      )}
+                                      {customStart && customEnd && !isCustomValid && (
+                                        <p className="text-[10px] text-destructive w-full">
+                                          Must be within {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </motion.div>
                           </AnimatePresence>
                         );
