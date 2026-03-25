@@ -9,7 +9,7 @@ import { useBookingForm } from "@/hooks/use-booking-form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { fmt12, fmtPriority, getSubBlocks, makeValue, toMins } from "@/lib/booking-utils";
+import { fmt12, fmtPriority, makeValue, toMins } from "@/lib/booking-utils";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -51,8 +51,7 @@ export default function Home() {
 
   const availableSlots = slots?.filter((s) => s.available) ?? [];
 
-  // Slots that actually have sub-blocks for the current duration
-  const slotsWithBlocks = availableSlots.filter((s) => getSubBlocks(s, durationMins).length > 0);
+  const slotsWithBlocks = availableSlots;
 
   // Auto-select first available day when slots load or duration changes
   useEffect(() => {
@@ -239,9 +238,7 @@ export default function Home() {
                     </div>
                   ) : slotsWithBlocks.length === 0 ? (
                     <div className="p-8 rounded-xl border-2 border-dashed border-border text-center text-muted-foreground">
-                      {availableSlots.length === 0
-                        ? "No time blocks available right now. Please check back later."
-                        : `No available blocks fit a ${DURATIONS.find(d => d.mins === durationMins)?.label} session. Try a shorter duration.`}
+                      No time slots available right now. Please check back later.
                     </div>
                   ) : (
                     <>
@@ -278,11 +275,21 @@ export default function Home() {
                         })}
                       </div>
 
-                      {/* Sub-blocks for selected day */}
+                      {/* Time entry for selected day */}
                       {selectedSlotId !== null && (() => {
                         const slot = slotsWithBlocks.find((s) => s.id === selectedSlotId);
                         if (!slot) return null;
-                        const subBlocks = getSubBlocks(slot, durationMins);
+                        const customValue = customStart && customEnd ? makeValue(slot.id, customStart, customEnd) : "";
+                        const customAssignedIdx = customValue ? priorities.indexOf(customValue) : -1;
+                        const isCustomAssigned = customAssignedIdx !== -1;
+                        const customMeta = isCustomAssigned ? PRIORITY_META[customAssignedIdx] : null;
+                        const isCustomValid = !!(
+                          customStart && customEnd &&
+                          toMins(customStart) >= toMins(slot.startTime) &&
+                          toMins(customEnd) <= toMins(slot.endTime) &&
+                          toMins(customStart) < toMins(customEnd)
+                        );
+                        const canAddCustom = isCustomValid && !isCustomAssigned && nextSlot !== -1;
                         return (
                           <AnimatePresence mode="wait">
                             <motion.div
@@ -291,123 +298,67 @@ export default function Home() {
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: -8 }}
                               transition={{ duration: 0.2 }}
-                              className="rounded-2xl border border-border bg-muted/30 p-4"
+                              className="rounded-2xl border border-border bg-muted/30 p-4 space-y-3"
                             >
-                              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                                Available times — {slot.label.split(" ")[0]}
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {subBlocks.map((block) => {
-                                  const assignedIdx = priorities.indexOf(block.value);
-                                  const isAssigned = assignedIdx !== -1;
-                                  const meta = isAssigned ? PRIORITY_META[assignedIdx] : null;
-                                  const canSelect = !isAssigned && nextSlot !== -1;
-                                  return (
-                                    <button
-                                      key={block.value}
-                                      type="button"
-                                      disabled={!isAssigned && nextSlot === -1}
-                                      onClick={() => handleBlockClick(block.value, slot.id)}
-                                      className={cn(
-                                        "group relative flex flex-col items-center px-3 py-2 rounded-xl border-2 text-xs font-medium transition-all duration-200 min-w-[72px]",
-                                        isAssigned
-                                          ? `${meta!.activeBg} shadow-sm scale-[1.04] hover:opacity-80`
-                                          : canSelect
-                                          ? "border-border bg-card hover:border-primary/50 hover:bg-primary/5 text-foreground cursor-pointer"
-                                          : "border-border/30 bg-muted/20 text-muted-foreground/40 cursor-not-allowed"
-                                      )}
-                                    >
-                                      {isAssigned && (
-                                        <>
-                                          <span className={cn("absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow transition-opacity group-hover:opacity-0", meta!.badge)}>
-                                            {assignedIdx + 1}
-                                          </span>
-                                          <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center text-[10px] font-bold shadow opacity-0 group-hover:opacity-100 transition-opacity">
-                                            ×
-                                          </span>
-                                        </>
-                                      )}
-                                      <span className="font-semibold">{fmt12(block.start)}</span>
-                                      <span className={cn("text-[10px]", isAssigned ? "text-current/70" : "text-muted-foreground")}>
-                                        – {fmt12(block.end)}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
+                              <div>
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">
+                                  Enter your time — {slot.label.split(" ")[0]}
+                                </p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  Available window: {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
+                                </p>
                               </div>
-
-                              {/* Custom time entry */}
-                              {(() => {
-                                const customValue = customStart && customEnd ? makeValue(slot.id, customStart, customEnd) : "";
-                                const customAssignedIdx = customValue ? priorities.indexOf(customValue) : -1;
-                                const isCustomAssigned = customAssignedIdx !== -1;
-                                const customMeta = isCustomAssigned ? PRIORITY_META[customAssignedIdx] : null;
-                                const isCustomValid = !!(
-                                  customStart && customEnd &&
-                                  toMins(customStart) >= toMins(slot.startTime) &&
-                                  toMins(customEnd) <= toMins(slot.endTime) &&
-                                  toMins(customStart) < toMins(customEnd)
-                                );
-                                const canAddCustom = isCustomValid && !isCustomAssigned && nextSlot !== -1;
-                                return (
-                                  <div className="mt-3 pt-3 border-t border-border/50">
-                                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                                      Or enter a custom time
-                                    </p>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <div className="flex items-center gap-1.5">
-                                        <input
-                                          type="time"
-                                          value={customStart}
-                                          min={slot.startTime}
-                                          max={slot.endTime}
-                                          onChange={(e) => { setCustomStart(e.target.value); setCustomEnd(""); }}
-                                          className="text-sm bg-background border border-border rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
-                                        />
-                                        <span className="text-muted-foreground text-xs">to</span>
-                                        <input
-                                          type="time"
-                                          value={customEnd}
-                                          min={customStart || slot.startTime}
-                                          max={slot.endTime}
-                                          disabled={!customStart}
-                                          onChange={(e) => setCustomEnd(e.target.value)}
-                                          className="text-sm bg-background border border-border rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-40"
-                                        />
-                                      </div>
-                                      {isCustomAssigned ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleBlockClick(customValue, slot.id)}
-                                          className={cn("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 shadow-sm", customMeta!.activeBg)}
-                                        >
-                                          <span className={cn("font-bold", customMeta!.starColor)}>{customAssignedIdx + 1}</span>
-                                          <X className="w-3 h-3" />
-                                        </button>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          disabled={!canAddCustom}
-                                          onClick={() => { if (canAddCustom) handleBlockClick(customValue, slot.id); }}
-                                          className={cn(
-                                            "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all",
-                                            canAddCustom
-                                              ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90"
-                                              : "bg-muted border-border text-muted-foreground/50 cursor-not-allowed"
-                                          )}
-                                        >
-                                          + Add
-                                        </button>
-                                      )}
-                                      {customStart && customEnd && !isCustomValid && (
-                                        <p className="text-[10px] text-destructive w-full">
-                                          Must be within {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="time"
+                                    value={customStart}
+                                    min={slot.startTime}
+                                    max={slot.endTime}
+                                    onChange={(e) => { setCustomStart(e.target.value); setCustomEnd(""); }}
+                                    className="text-sm bg-background border border-border rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
+                                  />
+                                  <span className="text-muted-foreground text-xs">to</span>
+                                  <input
+                                    type="time"
+                                    value={customEnd}
+                                    min={customStart || slot.startTime}
+                                    max={slot.endTime}
+                                    disabled={!customStart}
+                                    onChange={(e) => setCustomEnd(e.target.value)}
+                                    className="text-sm bg-background border border-border rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-40"
+                                  />
+                                </div>
+                                {isCustomAssigned ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBlockClick(customValue, slot.id)}
+                                    className={cn("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 shadow-sm", customMeta!.activeBg)}
+                                  >
+                                    <span className={cn("font-bold", customMeta!.starColor)}>{customAssignedIdx + 1}</span>
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={!canAddCustom}
+                                    onClick={() => { if (canAddCustom) handleBlockClick(customValue, slot.id); }}
+                                    className={cn(
+                                      "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all",
+                                      canAddCustom
+                                        ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90"
+                                        : "bg-muted border-border text-muted-foreground/50 cursor-not-allowed"
+                                    )}
+                                  >
+                                    + Add
+                                  </button>
+                                )}
+                                {customStart && customEnd && !isCustomValid && (
+                                  <p className="text-[10px] text-destructive w-full">
+                                    Must be within {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
+                                  </p>
+                                )}
+                              </div>
                             </motion.div>
                           </AnimatePresence>
                         );
