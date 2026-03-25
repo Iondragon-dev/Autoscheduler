@@ -1145,8 +1145,13 @@ function WeeklyCalendar() {
     slots: (slots ?? []).filter((s) => dayOfSlot(s.label) === day),
   }));
 
+  const priorityMatchesSlot = (p: string | null | undefined, slotId: number) =>
+    !!p && p.includes("|") && Number(p.split("|")[0]) === slotId;
+
   const bookingsForSlot = (slotId: number) =>
-    (bookings ?? []).filter((b) => b.timeSlotId === slotId);
+    (bookings ?? []).filter((b) =>
+      [b.priority1, b.priority2, b.priority3].some((p) => priorityMatchesSlot(p, slotId))
+    );
 
   const hasAnySlots = (slots ?? []).length > 0;
 
@@ -1233,14 +1238,22 @@ function WeeklyCalendar() {
                                       <div className="space-y-1">
                                         <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">3 Priority Choices</p>
                                         <div className="flex flex-wrap gap-1.5">
-                                          {[b.priority1, b.priority2, b.priority3].map((p, pi) => (
-                                            <div key={pi} className="flex items-center gap-1 text-xs bg-background rounded-md px-1.5 py-0.5 border border-border/50">
-                                              <span className={cn("font-bold text-[10px] shrink-0", PRIORITY_COLORS[pi])}>
-                                                {["1st", "2nd", "3rd"][pi]}
-                                              </span>
-                                              <span className="font-medium">{fmtPriority(p, slots)}</span>
-                                            </div>
-                                          ))}
+                                          {[b.priority1, b.priority2, b.priority3].map((p, pi) => {
+                                            const isMatch = priorityMatchesSlot(p, slot.id);
+                                            return (
+                                              <div key={pi} className={cn(
+                                                "flex items-center gap-1 text-xs rounded-md px-1.5 py-0.5 border",
+                                                isMatch
+                                                  ? "bg-primary/10 border-primary/40 ring-1 ring-primary/30"
+                                                  : "bg-background border-border/50 opacity-50"
+                                              )}>
+                                                <span className={cn("font-bold text-[10px] shrink-0", PRIORITY_COLORS[pi])}>
+                                                  {["1st", "2nd", "3rd"][pi]}
+                                                </span>
+                                                <span className="font-medium">{fmtPriority(p, slots)}</span>
+                                              </div>
+                                            );
+                                          })}
                                         </div>
                                       </div>
                                     </motion.div>
@@ -1307,7 +1320,13 @@ export default function Teacher() {
     });
   };
 
-  const bookingsForSlot = (slotId: number) => (bookings ?? []).filter((b) => b.timeSlotId === slotId);
+  const priorityMatchesSlot = (p: string | null | undefined, slotId: number) =>
+    !!p && p.includes("|") && Number(p.split("|")[0]) === slotId;
+
+  const bookingsForSlot = (slotId: number) =>
+    (bookings ?? []).filter((b) =>
+      [b.priority1, b.priority2, b.priority3].some((p) => priorityMatchesSlot(p, slotId))
+    );
 
   return (
     <div className="relative min-h-screen py-10 px-4 sm:px-6 lg:px-8 overflow-hidden">
@@ -1469,14 +1488,22 @@ export default function Teacher() {
                                       <div className="pt-1 border-t border-border/40 space-y-1.5">
                                         <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">3 Priority Choices</p>
                                         <div className="flex flex-wrap gap-2">
-                                          {[b.priority1, b.priority2, b.priority3].map((p, pi) => (
-                                            <div key={pi} className="flex items-center gap-1.5 text-xs bg-background rounded-lg px-2 py-1 border border-border/50">
-                                              <span className={cn("font-bold text-[10px] shrink-0 tabular-nums", PRIORITY_COLORS[pi])}>
-                                                {["1st", "2nd", "3rd"][pi]}
-                                              </span>
-                                              <span className="font-medium text-foreground">{fmtPriority(p, slots)}</span>
-                                            </div>
-                                          ))}
+                                          {[b.priority1, b.priority2, b.priority3].map((p, pi) => {
+                                            const isMatch = priorityMatchesSlot(p, slot.id);
+                                            return (
+                                              <div key={pi} className={cn(
+                                                "flex items-center gap-1.5 text-xs rounded-lg px-2 py-1 border",
+                                                isMatch
+                                                  ? "bg-primary/10 border-primary/40 ring-1 ring-primary/30"
+                                                  : "bg-background border-border/50 opacity-50"
+                                              )}>
+                                                <span className={cn("font-bold text-[10px] shrink-0 tabular-nums", PRIORITY_COLORS[pi])}>
+                                                  {["1st", "2nd", "3rd"][pi]}
+                                                </span>
+                                                <span className="font-medium text-foreground">{fmtPriority(p, slots)}</span>
+                                              </div>
+                                            );
+                                          })}
                                         </div>
                                       </div>
                                     </motion.div>
