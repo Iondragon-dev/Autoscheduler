@@ -1455,13 +1455,19 @@ export default function Teacher() {
                       const hasBlocked = blockedTimes.length > 0;
                       const isExpandable = hasBookings || hasBlocked;
                       return (
-                        <motion.div key={slot.id} layout initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className={cn("rounded-xl border overflow-hidden transition-all", slot.available ? "bg-card border-border" : "bg-muted/40 border-border opacity-70")}>
+                        <motion.div key={slot.id} layout initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className={cn("rounded-xl border overflow-hidden transition-all", slot.available ? "bg-card border-border" : "bg-muted/50 border-dashed border-muted-foreground/40")}>
+                          {!slot.available && (
+                            <div className="flex items-center gap-1.5 px-4 py-1.5 bg-muted-foreground/10 border-b border-dashed border-muted-foreground/20">
+                              <EyeOff className="w-3 h-3 text-muted-foreground" />
+                              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Hidden from students</span>
+                            </div>
+                          )}
                           <div className="flex items-center p-4 gap-3">
                             <button type="button" disabled={!isExpandable} onClick={() => setExpandedSlotId(isExpanded ? null : slot.id)} className={cn("shrink-0 flex items-center justify-center w-8 h-8 rounded-lg transition-colors", isExpandable ? "hover:bg-muted cursor-pointer" : "cursor-default opacity-30")}>
                               <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform duration-200", isExpanded && "rotate-180")} />
                             </button>
                             <div className="flex-1 min-w-0 cursor-pointer select-none" onClick={() => isExpandable && setExpandedSlotId(isExpanded ? null : slot.id)}>
-                              <div className="font-semibold text-foreground text-sm truncate">{slot.label}</div>
+                              <div className={cn("font-semibold text-sm truncate", slot.available ? "text-foreground" : "text-muted-foreground line-through")}>{slot.label}</div>
                               <div className="text-xs text-muted-foreground flex items-center gap-3 mt-0.5">
                                 <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{slot.startTime} – {slot.endTime}</span>
                                 <span className={cn("flex items-center gap-1 font-medium", hasBookings ? "text-primary" : "text-muted-foreground")}>
@@ -1475,8 +1481,8 @@ export default function Teacher() {
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              <button onClick={() => handleToggle(slot.id, slot.available)} title={slot.available ? "Mark unavailable" : "Mark available"} className="text-muted-foreground hover:text-foreground transition-colors">
-                                {slot.available ? <ToggleRight className="w-6 h-6 text-primary" /> : <ToggleLeft className="w-6 h-6" />}
+                              <button onClick={() => handleToggle(slot.id, slot.available)} title={slot.available ? "Hide from students" : "Show to students"} className="text-muted-foreground hover:text-foreground transition-colors">
+                                {slot.available ? <ToggleRight className="w-6 h-6 text-primary" /> : <ToggleLeft className="w-6 h-6 text-muted-foreground/60" />}
                               </button>
                               {!isDeleting ? (
                                 <button onClick={() => setDeleteConfirmId(slot.id)} title="Delete slot" className="text-muted-foreground hover:text-destructive transition-colors">
