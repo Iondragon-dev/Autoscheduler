@@ -67,8 +67,7 @@ router.patch("/timeslots/:id/blocked-times", async (req, res) => {
   const [existing] = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.id, id)).limit(1);
   if (!existing) { res.status(404).json({ message: "Time slot not found" }); return; }
 
-  const merged = [...(existing.blockedTimes ?? []), ...ranges];
-  const [updated] = await db.update(timeSlotsTable).set({ blockedTimes: merged }).where(eq(timeSlotsTable.id, id)).returning();
+  const [updated] = await db.update(timeSlotsTable).set({ blockedTimes: ranges }).where(eq(timeSlotsTable.id, id)).returning();
   res.json(serializeSlot(updated));
 });
 

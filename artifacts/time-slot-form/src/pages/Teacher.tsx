@@ -358,10 +358,12 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
     if (pendingBlocks.length === 0) return;
     setApplying(true);
     for (const block of pendingBlocks) {
+      const existing = slots.find((s) => s.id === block.slotId)?.blockedTimes ?? [];
+      const fullList = [...existing, ...block.ranges];
       await fetch(`/api/timeslots/${block.slotId}/blocked-times`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ranges: block.ranges }),
+        body: JSON.stringify({ ranges: fullList }),
       });
     }
     setApplying(false);
@@ -1328,6 +1330,18 @@ export default function Teacher() {
       [b.priority1, b.priority2, b.priority3].some((p) => priorityMatchesSlot(p, slotId))
     );
 
+  const handleRemoveBlockedTime = async (slotId: number, removeIdx: number) => {
+    const slot = (slots ?? []).find((s) => s.id === slotId);
+    if (!slot) return;
+    const newList = (slot.blockedTimes ?? []).filter((_, i) => i !== removeIdx);
+    await fetch(`/api/timeslots/${slotId}/blocked-times`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ranges: newList }),
+    });
+    refetchSlots();
+  };
+
   return (
     <div className="relative min-h-screen py-10 px-4 sm:px-6 lg:px-8 overflow-hidden">
       <img src={`${import.meta.env.BASE_URL}images/bg-mesh.png`} alt="" className="fixed inset-0 w-full h-full object-cover opacity-60 mix-blend-multiply pointer-events-none" />
@@ -1437,19 +1451,27 @@ export default function Teacher() {
                       const isDeleting = deleteConfirmId === slot.id;
                       const isExpanded = expandedSlotId === slot.id;
                       const hasBookings = slotBookings.length > 0;
+                      const blockedTimes = slot.blockedTimes ?? [];
+                      const hasBlocked = blockedTimes.length > 0;
+                      const isExpandable = hasBookings || hasBlocked;
                       return (
                         <motion.div key={slot.id} layout initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className={cn("rounded-xl border overflow-hidden transition-all", slot.available ? "bg-card border-border" : "bg-muted/40 border-border opacity-70")}>
                           <div className="flex items-center p-4 gap-3">
-                            <button type="button" disabled={!hasBookings} onClick={() => setExpandedSlotId(isExpanded ? null : slot.id)} className={cn("shrink-0 flex items-center justify-center w-8 h-8 rounded-lg transition-colors", hasBookings ? "hover:bg-muted cursor-pointer" : "cursor-default opacity-30")}>
+                            <button type="button" disabled={!isExpandable} onClick={() => setExpandedSlotId(isExpanded ? null : slot.id)} className={cn("shrink-0 flex items-center justify-center w-8 h-8 rounded-lg transition-colors", isExpandable ? "hover:bg-muted cursor-pointer" : "cursor-default opacity-30")}>
                               <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform duration-200", isExpanded && "rotate-180")} />
                             </button>
-                            <div className="flex-1 min-w-0 cursor-pointer select-none" onClick={() => hasBookings && setExpandedSlotId(isExpanded ? null : slot.id)}>
+                            <div className="flex-1 min-w-0 cursor-pointer select-none" onClick={() => isExpandable && setExpandedSlotId(isExpanded ? null : slot.id)}>
                               <div className="font-semibold text-foreground text-sm truncate">{slot.label}</div>
                               <div className="text-xs text-muted-foreground flex items-center gap-3 mt-0.5">
                                 <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{slot.startTime} – {slot.endTime}</span>
                                 <span className={cn("flex items-center gap-1 font-medium", hasBookings ? "text-primary" : "text-muted-foreground")}>
                                   <Users className="w-3 h-3" />{slotBookings.length} {slotBookings.length === 1 ? "booking" : "bookings"}
                                 </span>
+                                {hasBlocked && (
+                                  <span className="flex items-center gap-1 font-medium text-orange-500">
+                                    <Ban className="w-3 h-3" />{blockedTimes.length} blocked
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
@@ -1470,11 +1492,35 @@ export default function Teacher() {
                             </div>
                           </div>
                           <AnimatePresence>
-                            {isExpanded && hasBookings && (
+                            {isExpanded && isExpandable && (
                               <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
                                 <div className="border-t border-border mx-4 mb-3" />
-                                <div className="px-4 pb-4 space-y-2">
-                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Registered Students</p>
+                                <div className="px-4 pb-4 space-y-4">
+                                  {hasBlocked && (
+                                    <div>
+                                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                        <Ban className="w-3 h-3 text-orange-500" /> Blocked Times
+                                      </p>
+                                      <div className="flex flex-wrap gap-2">
+                                        {blockedTimes.map((bt, bti) => (
+                                          <div key={bti} className="flex items-center gap-1.5 bg-orange-50 border border-orange-200 text-orange-700 rounded-lg px-2.5 py-1 text-xs font-medium">
+                                            <span>{fmt12(bt.start)} – {fmt12(bt.end)}</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleRemoveBlockedTime(slot.id, bti)}
+                                              className="ml-0.5 text-orange-400 hover:text-orange-600 transition-colors"
+                                              title="Remove blocked time"
+                                            >
+                                              <X className="w-3 h-3" />
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {hasBookings && (
+                                    <div className="space-y-2">
+                                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Registered Students</p>
                                   {slotBookings.map((b, i) => (
                                     <motion.div key={b.id} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} className="p-3 rounded-lg bg-muted/30 border border-border/50 space-y-2">
                                       <div className="flex items-center gap-3">
@@ -1508,6 +1554,8 @@ export default function Teacher() {
                                       </div>
                                     </motion.div>
                                   ))}
+                                    </div>
+                                  )}
                                 </div>
                               </motion.div>
                             )}
