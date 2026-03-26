@@ -71,6 +71,12 @@ router.patch("/timeslots/:id/blocked-times", async (req, res) => {
   res.json(serializeSlot(updated));
 });
 
+router.delete("/timeslots", async (_req, res) => {
+  await db.delete(bookingsTable);
+  await db.delete(timeSlotsTable);
+  res.json({ message: "All slots and bookings deleted" });
+});
+
 router.delete("/timeslots/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) {
