@@ -267,6 +267,18 @@ export default function Home() {
                                 <p className="text-[11px] text-muted-foreground">
                                   Available window: {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
                                 </p>
+                                {slot.blockedTimes && slot.blockedTimes.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                    <span className="text-[11px] text-orange-600 font-semibold flex items-center gap-1">
+                                      <AlertCircle className="w-3 h-3" /> Unavailable:
+                                    </span>
+                                    {slot.blockedTimes.map((bt, i) => (
+                                      <span key={i} className="text-[11px] bg-orange-50 border border-orange-200 text-orange-700 rounded-md px-1.5 py-0.5 font-medium">
+                                        {fmt12(bt.start)} – {fmt12(bt.end)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                               <div className="flex flex-wrap items-center gap-2">
                                 <div className="flex items-center gap-1.5">
