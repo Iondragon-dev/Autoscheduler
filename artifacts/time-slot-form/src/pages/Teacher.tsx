@@ -222,6 +222,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
   const [step, setStep] = useState<WizardStep>("days");
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [dayTimes, setDayTimes] = useState<Record<string, { start: string; end: string }>>({});
+  const [currentDayIndex, setCurrentDayIndex] = useState(0);
   const [aiMessage, setAiMessage] = useState("");
   const [pendingSlots, setPendingSlots] = useState<ParsedSlot[] | null>(null);
   const [creating, setCreating] = useState(false);
@@ -263,7 +264,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
 
   function handleOpen() {
     if (step === "done") {
-      setStep("days"); setSelectedDays([]); setDayTimes({}); setAiMessage(""); setPendingSlots(null);
+      setStep("days"); setSelectedDays([]); setDayTimes({}); setAiMessage(""); setPendingSlots(null); setCurrentDayIndex(0);
     }
     if (blockStep === "done") { setBlockStep("input"); resetBlockState(); }
     if (editStep === "done") { setEditStep("input"); resetEditState(); }
@@ -383,6 +384,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
     const init: Record<string, { start: string; end: string }> = {};
     for (const d of selectedDays) init[d] = { start: "09:00", end: "11:00" };
     setDayTimes(init);
+    setCurrentDayIndex(0);
     setStep("times");
   }
 
@@ -605,68 +607,109 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                   </motion.div>
                 )}
 
-                {mode === "create" && step === "times" && (
-                  <motion.div
-                    key="times"
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    className="p-5 space-y-4"
-                  >
-                    <p className="text-sm text-foreground font-medium">What hours are you free each day?</p>
+                {mode === "create" && step === "times" && (() => {
+                  const currentDay = orderedSelected[currentDayIndex];
+                  const isLast = currentDayIndex === orderedSelected.length - 1;
+                  const isFirst = currentDayIndex === 0;
+                  const timeValid = dayTimes[currentDay]
+                    ? toMins(dayTimes[currentDay].start) < toMins(dayTimes[currentDay].end)
+                    : false;
+                  return (
+                    <motion.div
+                      key={`times-${currentDay}`}
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="p-5 space-y-4"
+                    >
+                      {/* Progress dots */}
+                      <div className="flex items-center gap-1.5 justify-center">
+                        {orderedSelected.map((_, i) => (
+                          <div
+                            key={i}
+                            className={cn(
+                              "rounded-full transition-all duration-200",
+                              i === currentDayIndex
+                                ? "w-4 h-2 bg-primary"
+                                : i < currentDayIndex
+                                ? "w-2 h-2 bg-primary/50"
+                                : "w-2 h-2 bg-muted-foreground/20"
+                            )}
+                          />
+                        ))}
+                      </div>
 
-                    <div className="space-y-3">
-                      {orderedSelected.map((day) => (
-                        <div key={day} className="bg-muted/30 rounded-xl border border-border p-3">
-                          <div className="flex items-center gap-2 mb-2.5">
-                            <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
-                            <span className="text-sm font-semibold text-foreground">{day}</span>
+                      <div>
+                        <p className="text-xs text-muted-foreground font-medium mb-0.5">
+                          Day {currentDayIndex + 1} of {orderedSelected.length}
+                        </p>
+                        <p className="text-base text-foreground font-semibold">
+                          What hours are you free on {currentDay}?
+                        </p>
+                      </div>
+
+                      <div className="bg-muted/30 rounded-xl border border-border p-4">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-muted-foreground mb-1.5 font-medium">From</label>
+                            <input
+                              type="time"
+                              value={dayTimes[currentDay]?.start ?? "09:00"}
+                              onChange={(e) =>
+                                setDayTimes((prev) => ({
+                                  ...prev,
+                                  [currentDay]: { ...prev[currentDay], start: e.target.value },
+                                }))
+                              }
+                              className="w-full text-sm bg-background border border-border rounded-lg px-2 py-2 outline-none focus:ring-2 focus:ring-primary/30"
+                            />
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-xs text-muted-foreground mb-1 font-medium">From</label>
-                              <input
-                                type="time"
-                                value={dayTimes[day]?.start ?? "09:00"}
-                                onChange={(e) =>
-                                  setDayTimes((prev) => ({
-                                    ...prev,
-                                    [day]: { ...prev[day], start: e.target.value },
-                                  }))
-                                }
-                                className="w-full text-sm bg-background border border-border rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-primary/30"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-muted-foreground mb-1 font-medium">To</label>
-                              <input
-                                type="time"
-                                value={dayTimes[day]?.end ?? "11:00"}
-                                onChange={(e) =>
-                                  setDayTimes((prev) => ({
-                                    ...prev,
-                                    [day]: { ...prev[day], end: e.target.value },
-                                  }))
-                                }
-                                className="w-full text-sm bg-background border border-border rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-primary/30"
-                              />
-                            </div>
+                          <div>
+                            <label className="block text-xs text-muted-foreground mb-1.5 font-medium">To</label>
+                            <input
+                              type="time"
+                              value={dayTimes[currentDay]?.end ?? "11:00"}
+                              onChange={(e) =>
+                                setDayTimes((prev) => ({
+                                  ...prev,
+                                  [currentDay]: { ...prev[currentDay], end: e.target.value },
+                                }))
+                              }
+                              className="w-full text-sm bg-background border border-border rounded-lg px-2 py-2 outline-none focus:ring-2 focus:ring-primary/30"
+                            />
                           </div>
                         </div>
-                      ))}
-                    </div>
+                        {!timeValid && dayTimes[currentDay] && (
+                          <p className="text-[11px] text-destructive mt-2">Start time must be before end time.</p>
+                        )}
+                      </div>
 
-                    <div className="flex gap-2 pt-1">
-                      <Button variant="outline" className="flex-1" onClick={() => setStep("days")}>
-                        Back
-                      </Button>
-                      <Button className="flex-1" onClick={handleSubmitSchedule}>
-                        Create My Schedule
-                        <Sparkles className="w-4 h-4 ml-1.5" />
-                      </Button>
-                    </div>
-                  </motion.div>
-                )}
+                      <div className="flex gap-2 pt-1">
+                        <Button
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => {
+                            if (isFirst) setStep("days");
+                            else setCurrentDayIndex((i) => i - 1);
+                          }}
+                        >
+                          Back
+                        </Button>
+                        {isLast ? (
+                          <Button className="flex-1" onClick={handleSubmitSchedule} disabled={!timeValid}>
+                            Create My Schedule
+                            <Sparkles className="w-4 h-4 ml-1.5" />
+                          </Button>
+                        ) : (
+                          <Button className="flex-1" onClick={() => setCurrentDayIndex((i) => i + 1)} disabled={!timeValid}>
+                            Next — {orderedSelected[currentDayIndex + 1]}
+                            <ArrowRight className="w-4 h-4 ml-1.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })()}
 
                 {mode === "create" && step === "processing" && (
                   <motion.div
