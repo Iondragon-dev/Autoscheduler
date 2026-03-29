@@ -10,7 +10,7 @@ import {
 import {
   Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft,
   AlertCircle, Calendar, ChevronDown, Mail, User, Sparkles, X,
-  Bot, CheckCircle2, ArrowRight, Loader2, KeyRound, Eye, EyeOff, Ban,
+  Bot, CheckCircle2, ArrowRight, Loader2, KeyRound, Eye, EyeOff, Ban, Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -192,8 +192,50 @@ function dayOfSlot(label: string): string {
   return "Other";
 }
 
+// ── ICS parser ───────────────────────────────────────────────────────────────
+function parseICSToSlots(icsContent: string): ParsedSlot[] {
+  const unfolded = icsContent.replace(/\r?\n[ \t]/g, "");
+  const slots: ParsedSlot[] = [];
+  const blocks = unfolded.split("BEGIN:VEVENT").slice(1);
+  const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  for (const block of blocks) {
+    const get = (key: string) => {
+      const m = block.match(new RegExp(`${key}(?:;[^:\r\n]+)?:([^\r\n]+)`));
+      return m ? m[1].trim() : null;
+    };
+    const dtStart = get("DTSTART");
+    const dtEnd = get("DTEND");
+    const summary = get("SUMMARY");
+    if (!dtStart || !dtEnd) continue;
+
+    const parse = (s: string): Date | null => {
+      if (/^\d{8}$/.test(s)) return null; // all-day — skip
+      const m = s.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
+      if (!m) return null;
+      const [, yr, mo, dy, hr, min, sec, z] = m;
+      return z ? new Date(Date.UTC(+yr, +mo - 1, +dy, +hr, +min, +sec))
+               : new Date(+yr, +mo - 1, +dy, +hr, +min, +sec);
+    };
+
+    const start = parse(dtStart);
+    const end = parse(dtEnd);
+    if (!start || !end) continue;
+
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const startTime = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
+    const endTime = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
+    if (startTime === endTime) continue; // skip zero-length events
+
+    const day = DAY_NAMES[start.getDay()];
+    const label = summary ? `${summary}` : `${day} ${fmt12(startTime)} – ${fmt12(endTime)}`;
+    slots.push({ label, startTime, endTime });
+  }
+  return slots;
+}
+
 // ── AI Assistant Popup ───────────────────────────────────────────────────────
-type WizardStep = "days" | "times" | "processing" | "confirm" | "done";
+type WizardStep = "days" | "ics" | "times" | "processing" | "confirm" | "done";
 type BlockStep = "input" | "done";
 type EditStep = "input" | "done";
 type PendingBlock = { slotId: number; slotLabel: string; ranges: { start: string; end: string }[] };
@@ -245,6 +287,10 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
   const [pendingBlocks, setPendingBlocks] = useState<PendingBlock[]>([]);
   const [applying, setApplying] = useState(false);
 
+  const [icsError, setIcsError] = useState<string | null>(null);
+  const [icsFileName, setIcsFileName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const createSlot = useCreateTimeSlot();
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -273,6 +319,28 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
 
   function switchMode(m: "create" | "block" | "edit") {
     setMode(m);
+  }
+
+  function handleICSFile(file: File) {
+    setIcsError(null);
+    if (!file.name.endsWith(".ics")) {
+      setIcsError("Please upload a .ics file exported from Google Calendar.");
+      return;
+    }
+    setIcsFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      const parsed = parseICSToSlots(content);
+      if (parsed.length === 0) {
+        setIcsError("No timed events found in this file. Make sure it contains calendar events with specific times (not all-day events).");
+        return;
+      }
+      setPendingSlots(parsed);
+      setAiMessage(`Found ${parsed.length} event${parsed.length !== 1 ? "s" : ""} in your calendar. Review and confirm below.`);
+      setStep("confirm");
+    };
+    reader.readAsText(file);
   }
 
   function handleAddEditOp() {
@@ -512,6 +580,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     <p className="text-sm font-bold text-foreground">Scheduling Assistant</p>
                     <p className="text-xs text-muted-foreground">
                       {mode === "create" && step === "days" && "Step 1 of 2 — Pick your days"}
+                      {mode === "create" && step === "ics" && "Import from Google Calendar"}
                       {mode === "create" && step === "times" && "Step 2 of 2 — Set your hours"}
                       {mode === "create" && step === "processing" && "Generating your schedule…"}
                       {mode === "create" && step === "confirm" && "Ready to add slots"}
@@ -603,6 +672,88 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     >
                       Continue
                       <ArrowRight className="w-4 h-4 ml-1.5" />
+                    </Button>
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-px bg-border" />
+                      <span className="text-[11px] text-muted-foreground">or</span>
+                      <div className="flex-1 h-px bg-border" />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => { setIcsError(null); setIcsFileName(null); setStep("ics"); }}
+                      className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary border border-dashed border-border hover:border-primary/50 rounded-xl py-3 transition-colors"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Import from Google Calendar (.ics)
+                    </button>
+                  </motion.div>
+                )}
+
+                {mode === "create" && step === "ics" && (
+                  <motion.div
+                    key="ics"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="p-5 space-y-4"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-foreground mb-1">Upload your Google Calendar export</p>
+                      <p className="text-xs text-muted-foreground">
+                        In Google Calendar, go to <span className="font-medium text-foreground">Settings → Import &amp; export → Export</span> to download a .ics file, then upload it here.
+                      </p>
+                    </div>
+
+                    {/* Hidden file input */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".ics"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleICSFile(file);
+                      }}
+                    />
+
+                    {/* Drop zone */}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const file = e.dataTransfer.files[0];
+                        if (file) handleICSFile(file);
+                      }}
+                      className="w-full flex flex-col items-center gap-3 py-8 rounded-xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                        <Upload className="w-5 h-5 text-muted-foreground" />
+                      </div>
+                      {icsFileName ? (
+                        <div className="text-center">
+                          <p className="text-sm font-semibold text-foreground">{icsFileName}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">Click to choose a different file</p>
+                        </div>
+                      ) : (
+                        <div className="text-center">
+                          <p className="text-sm font-semibold text-foreground">Click or drag &amp; drop your .ics file</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">Google Calendar export format</p>
+                        </div>
+                      )}
+                    </button>
+
+                    {icsError && (
+                      <p className="text-xs text-destructive flex items-start gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{icsError}
+                      </p>
+                    )}
+
+                    <Button variant="outline" className="w-full" onClick={() => setStep("days")}>
+                      Back
                     </Button>
                   </motion.div>
                 )}
