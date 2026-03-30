@@ -55,4 +55,12 @@ router.put("/auth/teacher/passcode", async (req, res) => {
   res.json({ ok: true });
 });
 
+router.post("/auth/teacher/passcode/reset", async (_req, res) => {
+  await db
+    .insert(settingsTable)
+    .values({ key: PASSCODE_KEY, value: DEFAULT_PASSCODE })
+    .onConflictDoUpdate({ target: settingsTable.key, set: { value: DEFAULT_PASSCODE } });
+  res.json({ ok: true, defaultPasscode: DEFAULT_PASSCODE });
+});
+
 export default router;
