@@ -780,15 +780,30 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
 
                     {/* Day picker — shown once a file is successfully parsed */}
                     {icsParsed.length > 0 && (() => {
-                      const uniqueDates = [...new Map(icsParsed.map(s => [s.dateKey, s.dateLabel])).entries()];
-                      const count = icsParsed.filter(s => s.dateKey === icsSelectedDate).length;
+                      const cutoff = new Date();
+                      cutoff.setDate(cutoff.getDate() - 7);
+                      const cutoffKey = cutoff.toISOString().slice(0, 10);
+                      const filtered = icsParsed.filter(s => s.dateKey >= cutoffKey);
+                      const uniqueDates = [...new Map(filtered.map(s => [s.dateKey, s.dateLabel])).entries()];
+                      // If current selection was clipped, reset to first available date
+                      const activeDate = uniqueDates.find(([k]) => k === icsSelectedDate)
+                        ? icsSelectedDate
+                        : uniqueDates[0]?.[0] ?? "";
+                      const count = filtered.filter(s => s.dateKey === activeDate).length;
+                      if (uniqueDates.length === 0) {
+                        return (
+                          <p className="text-xs text-muted-foreground text-center py-2">
+                            No events found in the past week or upcoming dates in this file.
+                          </p>
+                        );
+                      }
                       return (
                         <div className="space-y-3 pt-1">
                           <div>
                             <p className="text-sm font-medium text-foreground mb-2">Which day do you want to import?</p>
                             <div className="flex flex-col gap-1.5 max-h-44 overflow-y-auto pr-0.5">
                               {uniqueDates.map(([key, label]) => {
-                                const n = icsParsed.filter(s => s.dateKey === key).length;
+                                const n = filtered.filter(s => s.dateKey === key).length;
                                 return (
                                   <button
                                     key={key}
@@ -796,7 +811,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                                     onClick={() => setIcsSelectedDate(key)}
                                     className={cn(
                                       "w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors text-left",
-                                      icsSelectedDate === key
+                                      activeDate === key
                                         ? "border-primary bg-primary/10 text-primary font-semibold"
                                         : "border-border text-foreground hover:bg-muted"
                                     )}
@@ -810,11 +825,11 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                           </div>
                           <Button
                             className="w-full"
-                            disabled={!icsSelectedDate}
+                            disabled={!activeDate || count === 0}
                             onClick={() => {
-                              const forDay = icsParsed.filter(s => s.dateKey === icsSelectedDate);
+                              const forDay = filtered.filter(s => s.dateKey === activeDate);
                               setPendingSlots(forDay);
-                              setAiMessage(`Importing ${forDay.length} event${forDay.length !== 1 ? "s" : ""} from ${uniqueDates.find(([k]) => k === icsSelectedDate)?.[1]}. Review and confirm below.`);
+                              setAiMessage(`Importing ${forDay.length} event${forDay.length !== 1 ? "s" : ""} from ${uniqueDates.find(([k]) => k === activeDate)?.[1]}. Review and confirm below.`);
                               setStep("confirm");
                             }}
                           >
