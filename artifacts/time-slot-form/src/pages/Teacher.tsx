@@ -1004,6 +1004,14 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                           <CheckCircle2 className="w-4 h-4 mr-1.5" />
                           Add These Slots
                         </Button>
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          disabled={creating}
+                          onClick={() => { setPendingSlots([]); setAiMessage(""); setStep("days"); }}
+                        >
+                          ← Start Over
+                        </Button>
                       </div>
                     ) : (
                       <div className="text-center py-4">
