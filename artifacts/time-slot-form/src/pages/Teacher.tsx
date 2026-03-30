@@ -722,7 +722,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 40, scale: 0.96 }}
             transition={{ type: "spring", bounce: 0.22, duration: 0.4 }}
-            className="fixed bottom-24 right-6 z-50 w-[min(440px,calc(100vw-3rem))] bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden"
+            className="fixed bottom-24 right-6 z-50 w-[min(440px,calc(100vw-3rem))] max-h-[calc(100vh-7rem)] bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden"
           >
             {/* Header */}
             <div className="px-5 pt-4 pb-0 border-b border-border bg-primary/5 shrink-0">
@@ -771,7 +771,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
             </div>
 
             {/* Body */}
-            <div className="overflow-y-auto max-h-[480px]">
+            <div className="overflow-y-auto flex-1 min-h-0">
               <AnimatePresence mode="wait">
 
                 {/* ── Create Schedule mode ── */}
