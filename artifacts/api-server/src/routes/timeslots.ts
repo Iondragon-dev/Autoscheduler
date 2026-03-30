@@ -111,6 +111,8 @@ router.get("/bookings", async (_req, res) => {
     priority2: bookingsTable.priority2,
     priority3: bookingsTable.priority3,
     createdAt: bookingsTable.createdAt,
+    assignedPriority: bookingsTable.assignedPriority,
+    assignedTime: bookingsTable.assignedTime,
   })
   .from(bookingsTable)
   .leftJoin(timeSlotsTable, eq(bookingsTable.timeSlotId, timeSlotsTable.id))
@@ -151,6 +153,92 @@ router.post("/bookings", async (req, res) => {
     priority3: booking.priority3,
     createdAt: booking.createdAt.toISOString(),
   });
+});
+
+router.post("/bookings/auto-schedule", async (req, res) => {
+  const apply = req.body?.apply === true;
+
+  const allBookings = await db.select().from(bookingsTable).orderBy(bookingsTable.createdAt);
+  const allSlots = await db.select().from(timeSlotsTable);
+
+  const parsePriority = (p: string | null | undefined) => {
+    if (!p || !p.includes("|")) return null;
+    const pipeIdx = p.indexOf("|");
+    const slotId = parseInt(p.slice(0, pipeIdx));
+    if (isNaN(slotId)) return null;
+    return { slotId, key: p };
+  };
+
+  const assignedPositions = new Set<string>();
+  const assignments = new Map<number, { priority: number; time: string }>();
+
+  let unassigned = allBookings.map(b => b.id);
+
+  for (let round = 1; round <= 3; round++) {
+    const wants = new Map<string, number[]>();
+
+    for (const bookingId of unassigned) {
+      const booking = allBookings.find(b => b.id === bookingId)!;
+      const p = round === 1 ? booking.priority1 : round === 2 ? booking.priority2 : booking.priority3;
+      const parsed = parsePriority(p);
+      if (!parsed) continue;
+      if (!allSlots.find(s => s.id === parsed.slotId)) continue;
+      if (assignedPositions.has(parsed.key)) continue;
+      if (!wants.has(parsed.key)) wants.set(parsed.key, []);
+      wants.get(parsed.key)!.push(bookingId);
+    }
+
+    const newlyAssigned = new Set<number>();
+    for (const [posKey, bookingIds] of wants) {
+      const winner = bookingIds[0];
+      assignments.set(winner, { priority: round, time: posKey });
+      assignedPositions.add(posKey);
+      newlyAssigned.add(winner);
+    }
+
+    unassigned = unassigned.filter(id => !newlyAssigned.has(id));
+    if (unassigned.length === 0) break;
+  }
+
+  const results = allBookings.map(b => {
+    const a = assignments.get(b.id);
+    const pipeIdx = a?.time?.indexOf("|") ?? -1;
+    const slotId = a && pipeIdx >= 0 ? parseInt(a.time.slice(0, pipeIdx)) : null;
+    const timeRange = a && pipeIdx >= 0 ? a.time.slice(pipeIdx + 1) : null;
+    const slot = slotId != null ? allSlots.find(s => s.id === slotId) : null;
+    return {
+      bookingId: b.id,
+      name: b.name,
+      email: b.email,
+      assignedPriority: a?.priority ?? null,
+      assignedSlotLabel: slot?.label ?? null,
+      assignedTimeRange: timeRange,
+      assignedTime: a?.time ?? null,
+    };
+  });
+
+  if (apply) {
+    for (const r of results) {
+      await db.update(bookingsTable)
+        .set({ assignedPriority: r.assignedPriority, assignedTime: r.assignedTime })
+        .where(eq(bookingsTable.id, r.bookingId));
+    }
+  }
+
+  const summary = {
+    total: results.length,
+    got1st: results.filter(r => r.assignedPriority === 1).length,
+    got2nd: results.filter(r => r.assignedPriority === 2).length,
+    got3rd: results.filter(r => r.assignedPriority === 3).length,
+    unassigned: results.filter(r => r.assignedPriority === null).length,
+  };
+
+  res.json({ results, summary });
+});
+
+router.delete("/bookings/schedule", async (_req, res) => {
+  await db.update(bookingsTable).set({ assignedPriority: null, assignedTime: null });
+  res.json({ ok: true });
 });
 
 export default router;

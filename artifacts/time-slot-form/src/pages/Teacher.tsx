@@ -11,6 +11,7 @@ import {
   Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft,
   AlertCircle, Calendar, ChevronDown, Mail, User, Sparkles, X,
   Bot, CheckCircle2, ArrowRight, Loader2, KeyRound, Eye, EyeOff, Ban, Upload,
+  Wand2, CheckCheck, RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1722,7 +1723,7 @@ export default function Teacher() {
   const updateSlot = useUpdateTimeSlot();
   const deleteSlot = useDeleteTimeSlot();
 
-  const [tab, setTab] = useState<"slots" | "calendar">("slots");
+  const [tab, setTab] = useState<"slots" | "calendar" | "schedule">("slots");
   const [showAddForm, setShowAddForm] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deleteAllConfirm, setDeleteAllConfirm] = useState(false);
@@ -1733,6 +1734,20 @@ export default function Teacher() {
   const [form, setForm] = useState<NewSlotForm>({ label: "", startTime: "", endTime: "" });
   const [formError, setFormError] = useState<string | null>(null);
   const [showPasscodeDialog, setShowPasscodeDialog] = useState(false);
+
+  type ScheduleResult = {
+    bookingId: number; name: string; email: string;
+    assignedPriority: number | null; assignedSlotLabel: string | null;
+    assignedTimeRange: string | null; assignedTime: string | null;
+  };
+  type ScheduleSummary = { total: number; got1st: number; got2nd: number; got3rd: number; unassigned: number };
+  const [schedulePreview, setSchedulePreview] = useState<ScheduleResult[] | null>(null);
+  const [scheduleSummary, setScheduleSummary] = useState<ScheduleSummary | null>(null);
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [isApplyingSchedule, setIsApplyingSchedule] = useState(false);
+  const [scheduleApplied, setScheduleApplied] = useState(false);
+  const [clearScheduleConfirm, setClearScheduleConfirm] = useState(false);
+  const [isClearingSchedule, setIsClearingSchedule] = useState(false);
 
   const handleAddSlot = () => {
     if (!form.label.trim() || !form.startTime || !form.endTime) {
@@ -1833,28 +1848,44 @@ export default function Teacher() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6">
-          {(["slots", "calendar"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cn(
-                "px-5 py-2 rounded-full text-sm font-semibold transition-all",
-                tab === t ? "bg-primary text-primary-foreground shadow" : "bg-card/80 text-muted-foreground hover:text-foreground border border-border"
+        <div className="flex gap-2 mb-6 flex-wrap">
+          <button
+            onClick={() => setTab("slots")}
+            className={cn(
+              "px-5 py-2 rounded-full text-sm font-semibold transition-all",
+              tab === "slots" ? "bg-primary text-primary-foreground shadow" : "bg-card/80 text-muted-foreground hover:text-foreground border border-border"
+            )}
+          >
+            <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" />Time Slots</span>
+          </button>
+          <button
+            onClick={() => setTab("calendar")}
+            className={cn(
+              "px-5 py-2 rounded-full text-sm font-semibold transition-all",
+              tab === "calendar" ? "bg-primary text-primary-foreground shadow" : "bg-card/80 text-muted-foreground hover:text-foreground border border-border"
+            )}
+          >
+            <span className="flex items-center gap-1.5">
+              <Calendar className="w-4 h-4" />Weekly Calendar
+              {(bookings?.length ?? 0) > 0 && (
+                <span className="ml-1 bg-primary/20 text-primary text-xs px-1.5 py-0.5 rounded-full font-bold">{bookings?.length}</span>
               )}
-            >
-              {t === "slots" ? (
-                <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" />Time Slots</span>
-              ) : (
-                <span className="flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4" />Weekly Calendar
-                  {(bookings?.length ?? 0) > 0 && (
-                    <span className="ml-1 bg-primary/20 text-primary text-xs px-1.5 py-0.5 rounded-full font-bold">{bookings?.length}</span>
-                  )}
-                </span>
+            </span>
+          </button>
+          <button
+            onClick={() => setTab("schedule")}
+            className={cn(
+              "px-5 py-2 rounded-full text-sm font-semibold transition-all",
+              tab === "schedule" ? "bg-primary text-primary-foreground shadow" : "bg-card/80 text-muted-foreground hover:text-foreground border border-border"
+            )}
+          >
+            <span className="flex items-center gap-1.5">
+              <Wand2 className="w-4 h-4" />Auto-Schedule
+              {scheduleApplied && (
+                <span className="ml-1 bg-green-500/20 text-green-600 text-xs px-1.5 py-0.5 rounded-full font-bold">Applied</span>
               )}
-            </button>
-          ))}
+            </span>
+          </button>
         </div>
 
         <AnimatePresence mode="wait">
@@ -2084,6 +2115,180 @@ export default function Teacher() {
               <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-lg p-5">
                 <h2 className="font-bold text-foreground text-lg mb-4">Weekly Schedule & Bookings</h2>
                 <WeeklyCalendar />
+              </div>
+            </motion.div>
+          )}
+          {tab === "schedule" && (
+            <motion.div key="schedule" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.25 }}>
+              <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-lg p-5 space-y-5">
+                {/* Header */}
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="font-bold text-foreground text-lg flex items-center gap-2">
+                      <Wand2 className="w-5 h-5 text-primary" />Auto-Schedule Students
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Assigns each student to their highest available preference. When two students want the same slot, the earlier submission wins.
+                    </p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setIsScheduling(true);
+                      setScheduleApplied(false);
+                      try {
+                        const res = await fetch(`${import.meta.env.BASE_URL}api/bookings/auto-schedule`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ apply: false }),
+                        });
+                        const data = await res.json();
+                        setSchedulePreview(data.results);
+                        setScheduleSummary(data.summary);
+                      } finally {
+                        setIsScheduling(false);
+                      }
+                    }}
+                    disabled={isScheduling || (bookings?.length ?? 0) === 0}
+                    className="shrink-0 flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-all"
+                  >
+                    {isScheduling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                    {isScheduling ? "Computing…" : "Run Preview"}
+                  </button>
+                </div>
+
+                {(bookings?.length ?? 0) === 0 && (
+                  <div className="text-center py-8 text-muted-foreground text-sm border border-dashed border-border rounded-xl">
+                    No student bookings yet. Students need to submit their preferences first.
+                  </div>
+                )}
+
+                {scheduleSummary && schedulePreview && (
+                  <>
+                    {/* Summary badges */}
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { label: "1st choice", value: scheduleSummary.got1st, color: "bg-green-500/15 text-green-700 border-green-500/30" },
+                        { label: "2nd choice", value: scheduleSummary.got2nd, color: "bg-blue-500/15 text-blue-700 border-blue-500/30" },
+                        { label: "3rd choice", value: scheduleSummary.got3rd, color: "bg-amber-500/15 text-amber-700 border-amber-500/30" },
+                        { label: "Unassigned", value: scheduleSummary.unassigned, color: "bg-red-500/15 text-red-700 border-red-500/30" },
+                      ].map(b => (
+                        <span key={b.label} className={cn("text-xs font-semibold px-3 py-1 rounded-full border", b.color)}>
+                          {b.value} got {b.label}
+                        </span>
+                      ))}
+                      <span className="text-xs text-muted-foreground self-center ml-1">
+                        {scheduleApplied ? "· Schedule applied to database" : "· Preview only — not saved yet"}
+                      </span>
+                    </div>
+
+                    {/* Results table */}
+                    <div className="rounded-xl border border-border overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Student</th>
+                            <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Assigned Slot</th>
+                            <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Time</th>
+                            <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Got</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {schedulePreview.map((r, i) => {
+                            const [tStart, tEnd] = (r.assignedTimeRange ?? "").split("-");
+                            const priorityLabels: Record<number, { label: string; cls: string }> = {
+                              1: { label: "1st", cls: "bg-green-500/15 text-green-700 border-green-500/30" },
+                              2: { label: "2nd", cls: "bg-blue-500/15 text-blue-700 border-blue-500/30" },
+                              3: { label: "3rd", cls: "bg-amber-500/15 text-amber-700 border-amber-500/30" },
+                            };
+                            const badge = r.assignedPriority ? priorityLabels[r.assignedPriority] : null;
+                            return (
+                              <tr key={r.bookingId} className={cn("transition-colors", i % 2 === 0 ? "bg-background/40" : "bg-background/20")}>
+                                <td className="px-3 py-2">
+                                  <div className="font-medium text-foreground">{r.name}</div>
+                                  <div className="text-xs text-muted-foreground">{r.email}</div>
+                                </td>
+                                <td className="px-3 py-2 text-foreground">
+                                  {r.assignedSlotLabel ?? <span className="text-muted-foreground italic">—</span>}
+                                </td>
+                                <td className="px-3 py-2 text-foreground tabular-nums">
+                                  {tStart && tEnd
+                                    ? `${fmt12(tStart)} – ${fmt12(tEnd)}`
+                                    : <span className="text-muted-foreground italic">—</span>}
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  {badge
+                                    ? <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full border", badge.cls)}>{badge.label}</span>
+                                    : <span className="text-xs font-bold px-2 py-0.5 rounded-full border bg-red-500/15 text-red-700 border-red-500/30">None</span>
+                                  }
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button
+                        onClick={async () => {
+                          setIsApplyingSchedule(true);
+                          try {
+                            await fetch(`${import.meta.env.BASE_URL}api/bookings/auto-schedule`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ apply: true }),
+                            });
+                            setScheduleApplied(true);
+                            refetchBookings();
+                          } finally {
+                            setIsApplyingSchedule(false);
+                          }
+                        }}
+                        disabled={isApplyingSchedule || scheduleApplied}
+                        className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-all"
+                      >
+                        {isApplyingSchedule ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCheck className="w-4 h-4" />}
+                        {scheduleApplied ? "Schedule Applied" : "Apply Schedule"}
+                      </button>
+
+                      {clearScheduleConfirm ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Clear all assignments?</span>
+                          <button
+                            onClick={async () => {
+                              setIsClearingSchedule(true);
+                              try {
+                                await fetch(`${import.meta.env.BASE_URL}api/bookings/schedule`, { method: "DELETE" });
+                                setSchedulePreview(null);
+                                setScheduleSummary(null);
+                                setScheduleApplied(false);
+                                setClearScheduleConfirm(false);
+                                refetchBookings();
+                              } finally {
+                                setIsClearingSchedule(false);
+                              }
+                            }}
+                            disabled={isClearingSchedule}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-red-500 text-white font-semibold hover:bg-red-600 disabled:opacity-50"
+                          >
+                            {isClearingSchedule ? "Clearing…" : "Yes, clear"}
+                          </button>
+                          <button onClick={() => setClearScheduleConfirm(false)} className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground">
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setClearScheduleConfirm(true)}
+                          className="flex items-center gap-2 border border-border text-muted-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:text-destructive hover:border-destructive/40 transition-all"
+                        >
+                          <RotateCcw className="w-4 h-4" />Clear Schedule
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </motion.div>
           )}
