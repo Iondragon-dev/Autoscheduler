@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
 import { signOutTeacher } from "./TeacherGate";
 import { fmt12, fmtPriority, toMins, fromMins } from "@/lib/booking-utils";
+import JSZip from "jszip";
 
 interface NewSlotForm { label: string; startTime: string; endTime: string; }
 interface ParsedSlot { label: string; startTime: string; endTime: string; }
@@ -321,26 +322,44 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
     setMode(m);
   }
 
-  function handleICSFile(file: File) {
+  async function handleICSFile(file: File) {
     setIcsError(null);
-    if (!file.name.endsWith(".ics")) {
-      setIcsError("Please upload a .ics file exported from Google Calendar.");
+    const isZip = file.name.endsWith(".zip");
+    const isIcs = file.name.endsWith(".ics");
+    if (!isZip && !isIcs) {
+      setIcsError("Please upload a .zip or .ics file exported from Google Calendar.");
       return;
     }
     setIcsFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const content = e.target?.result as string;
-      const parsed = parseICSToSlots(content);
-      if (parsed.length === 0) {
-        setIcsError("No timed events found in this file. Make sure it contains calendar events with specific times (not all-day events).");
+
+    let icsContent = "";
+    if (isZip) {
+      try {
+        const zip = await JSZip.loadAsync(file);
+        const icsFiles = Object.keys(zip.files).filter((n) => n.endsWith(".ics"));
+        if (icsFiles.length === 0) {
+          setIcsError("No .ics file found inside the ZIP. Make sure this is a Google Calendar export.");
+          return;
+        }
+        // Concatenate all .ics files found (Google exports one per calendar)
+        const parts = await Promise.all(icsFiles.map((name) => zip.files[name].async("string")));
+        icsContent = parts.join("\n");
+      } catch {
+        setIcsError("Could not read the ZIP file. Please try exporting again from Google Calendar.");
         return;
       }
-      setPendingSlots(parsed);
-      setAiMessage(`Found ${parsed.length} event${parsed.length !== 1 ? "s" : ""} in your calendar. Review and confirm below.`);
-      setStep("confirm");
-    };
-    reader.readAsText(file);
+    } else {
+      icsContent = await file.text();
+    }
+
+    const parsed = parseICSToSlots(icsContent);
+    if (parsed.length === 0) {
+      setIcsError("No timed events found. Make sure the file contains calendar events with specific start and end times (all-day events are skipped).");
+      return;
+    }
+    setPendingSlots(parsed);
+    setAiMessage(`Found ${parsed.length} event${parsed.length !== 1 ? "s" : ""} in your calendar. Review and confirm below.`);
+    setStep("confirm");
   }
 
   function handleAddEditOp() {
@@ -686,7 +705,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                       className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary border border-dashed border-border hover:border-primary/50 rounded-xl py-3 transition-colors"
                     >
                       <Upload className="w-4 h-4" />
-                      Import from Google Calendar (.ics)
+                      Import from Google Calendar (.zip / .ics)
                     </button>
                   </motion.div>
                 )}
@@ -710,7 +729,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept=".ics"
+                      accept=".ics,.zip"
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
@@ -740,8 +759,8 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                         </div>
                       ) : (
                         <div className="text-center">
-                          <p className="text-sm font-semibold text-foreground">Click or drag &amp; drop your .ics file</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">Google Calendar export format</p>
+                          <p className="text-sm font-semibold text-foreground">Click or drag &amp; drop your file</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">.zip or .ics — Google Calendar export</p>
                         </div>
                       )}
                     </button>
