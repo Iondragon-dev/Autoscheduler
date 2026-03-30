@@ -194,68 +194,178 @@ function dayOfSlot(label: string): string {
   return "Other";
 }
 
+// ── RRULE expander ────────────────────────────────────────────────────────────
+function expandRRule(
+  rrule: string,
+  dtStart: Date,
+  windowStart: Date,
+  windowEnd: Date,
+  exDates: Set<string>,
+  pad: (n: number) => string
+): Date[] {
+  const toKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const parts: Record<string, string> = {};
+  rrule.split(";").forEach(p => { const [k, v] = p.split("="); if (k && v) parts[k.trim()] = v.trim(); });
+
+  const freq = parts["FREQ"] ?? "";
+  const interval = Math.max(1, parseInt(parts["INTERVAL"] ?? "1"));
+  const maxCount = parts["COUNT"] ? parseInt(parts["COUNT"]) : 500;
+  const DAY_MAP: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+
+  let until: Date | null = null;
+  if (parts["UNTIL"]) {
+    const um = parts["UNTIL"].match(/^(\d{4})(\d{2})(\d{2})/);
+    if (um) { until = new Date(+um[1], +um[2] - 1, +um[3]); until.setHours(23, 59, 59, 999); }
+  }
+
+  const results: Date[] = [];
+  let total = 0;
+
+  const add = (d: Date) => {
+    if (!exDates.has(toKey(d)) && d >= windowStart && d <= windowEnd) results.push(new Date(d));
+    total++;
+  };
+
+  if (freq === "DAILY") {
+    let cur = new Date(dtStart);
+    while (total < maxCount && cur <= windowEnd) {
+      if (until && cur > until) break;
+      if (cur >= dtStart) add(cur);
+      cur = new Date(cur); cur.setDate(cur.getDate() + interval);
+    }
+  } else if (freq === "WEEKLY") {
+    const byDays = parts["BYDAY"]
+      ? parts["BYDAY"].split(",").map(d => d.replace(/[-+\d]/g, "").trim())
+      : [Object.entries(DAY_MAP).find(([, v]) => v === dtStart.getDay())?.[0] ?? "MO"];
+
+    // Walk Monday-anchored weeks starting from the dtStart week
+    const startDow = dtStart.getDay();
+    const toMon = startDow === 0 ? -6 : 1 - startDow;
+    let weekMon = new Date(dtStart); weekMon.setDate(dtStart.getDate() + toMon); weekMon.setHours(0, 0, 0, 0);
+
+    let weekCount = 0;
+    while (weekCount < 300 && total < maxCount && weekMon <= windowEnd) {
+      if (until && weekMon > until) break;
+      for (const dayCode of byDays) {
+        const dayNum = DAY_MAP[dayCode];
+        if (dayNum === undefined) continue;
+        const monOffset = dayNum === 0 ? 6 : dayNum - 1;
+        const occ = new Date(weekMon); occ.setDate(weekMon.getDate() + monOffset);
+        occ.setHours(dtStart.getHours(), dtStart.getMinutes(), dtStart.getSeconds());
+        if (occ < dtStart || (until && occ > until) || total >= maxCount) continue;
+        add(occ);
+      }
+      weekMon = new Date(weekMon); weekMon.setDate(weekMon.getDate() + 7 * interval);
+      weekCount++;
+    }
+  } else if (freq === "MONTHLY") {
+    let cur = new Date(dtStart);
+    while (total < maxCount && cur <= windowEnd) {
+      if (until && cur > until) break;
+      if (cur >= dtStart) add(cur);
+      cur = new Date(cur); cur.setMonth(cur.getMonth() + interval);
+    }
+  }
+
+  return results;
+}
+
 // ── ICS parser ───────────────────────────────────────────────────────────────
 function parseICSToSlots(icsContent: string): ParsedSlotWithDate[] {
   const unfolded = icsContent.replace(/\r?\n[ \t]/g, "");
-  const slots: ParsedSlotWithDate[] = [];
+  const allSlots: ParsedSlotWithDate[] = [];
   const blocks = unfolded.split("BEGIN:VEVENT").slice(1);
   const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const toKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  // Expansion window: 14 days ago → 60 days ahead
+  const windowStart = new Date(); windowStart.setDate(windowStart.getDate() - 14); windowStart.setHours(0, 0, 0, 0);
+  const windowEnd = new Date(); windowEnd.setDate(windowEnd.getDate() + 60); windowEnd.setHours(23, 59, 59, 999);
+
+  const TEACHING_KEYWORDS = [
+    "teach", "slot", "lesson", "class", "session", "tutorial",
+    "office hours", "tutor", "instruction", "lecture", "seminar",
+    "coaching", "training", "workshop",
+  ];
+
+  const parseDateTime = (s: string): Date | null => {
+    if (/^\d{8}$/.test(s)) return null; // all-day — skip
+    const m = s.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
+    if (!m) return null;
+    const [, yr, mo, dy, hr, min, sec, z] = m;
+    return z ? new Date(Date.UTC(+yr, +mo - 1, +dy, +hr, +min, +sec))
+             : new Date(+yr, +mo - 1, +dy, +hr, +min, +sec);
+  };
 
   for (const block of blocks) {
     const get = (key: string) => {
-      const m = block.match(new RegExp(`${key}(?:;[^:\r\n]+)?:([^\r\n]+)`));
+      const m = block.match(new RegExp(`${key}(?:;[^:\\r\\n]+)?:([^\\r\\n]+)`));
       return m ? m[1].trim() : null;
     };
-    const dtStart = get("DTSTART");
-    const dtEnd = get("DTEND");
-    const summary = get("SUMMARY");
-    if (!dtStart || !dtEnd) continue;
-
-    const parse = (s: string): Date | null => {
-      if (/^\d{8}$/.test(s)) return null; // all-day — skip
-      const m = s.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
-      if (!m) return null;
-      const [, yr, mo, dy, hr, min, sec, z] = m;
-      return z ? new Date(Date.UTC(+yr, +mo - 1, +dy, +hr, +min, +sec))
-               : new Date(+yr, +mo - 1, +dy, +hr, +min, +sec);
+    const getAll = (key: string): string[] => {
+      const re = new RegExp(`${key}(?:;[^:\\r\\n]+)?:([^\\r\\n]+)`, "g");
+      const results: string[] = [];
+      let m; while ((m = re.exec(block)) !== null) results.push(m[1].trim());
+      return results;
     };
 
-    const start = parse(dtStart);
-    const end = parse(dtEnd);
-    if (!start || !end) continue;
+    const dtStartRaw = get("DTSTART");
+    const dtEndRaw = get("DTEND");
+    const summary = get("SUMMARY");
+    const rruleRaw = get("RRULE");
 
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const startTime = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
-    const endTime = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
-    if (startTime === endTime) continue; // skip zero-length events
+    if (!dtStartRaw || !dtEndRaw) continue;
 
-    // Only import events whose title matches teaching-related keywords
-    const TEACHING_KEYWORDS = [
-      "teach", "slot", "lesson", "class", "session", "tutorial",
-      "office hours", "tutor", "instruction", "lecture", "seminar",
-      "coaching", "training", "workshop",
-    ];
+    const dtStart = parseDateTime(dtStartRaw);
+    const dtEnd = parseDateTime(dtEndRaw);
+    if (!dtStart || !dtEnd) continue;
+
+    const duration = dtEnd.getTime() - dtStart.getTime();
+
+    // Collect all EXDATEs (excluded recurrence instances)
+    const exDates = new Set<string>();
+    for (const line of getAll("EXDATE")) {
+      line.split(",").forEach(ds => { const d = parseDateTime(ds.trim()); if (d) exDates.add(toKey(d)); });
+    }
+
+    // Teaching keyword filter
     const summaryLower = (summary ?? "").toLowerCase();
-    const isTeachingEvent = TEACHING_KEYWORDS.some(kw => summaryLower.includes(kw));
-    if (!isTeachingEvent) continue;
+    if (!TEACHING_KEYWORDS.some(kw => summaryLower.includes(kw))) continue;
 
-    const dayName = DAY_NAMES[start.getDay()];
-    const dateKey = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
-    const dateLabel = `${dayName}, ${MONTH_NAMES[start.getMonth()]} ${start.getDate()}`;
+    // Get all occurrence start dates
+    let occurrences: Date[];
+    if (rruleRaw) {
+      occurrences = expandRRule(rruleRaw, dtStart, windowStart, windowEnd, exDates, pad);
+    } else {
+      occurrences = (!exDates.has(toKey(dtStart)) && dtStart >= windowStart && dtStart <= windowEnd)
+        ? [dtStart] : [];
+    }
 
-    // Compute ISO week (Monday-anchored)
-    const dow = start.getDay(); // 0=Sun, 1=Mon...
-    const daysToMon = dow === 0 ? -6 : 1 - dow;
-    const monday = new Date(start); monday.setDate(start.getDate() + daysToMon);
-    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-    const weekKey = `${monday.getFullYear()}-${pad(monday.getMonth() + 1)}-${pad(monday.getDate())}`;
-    const weekLabel = `${MONTH_NAMES[monday.getMonth()]} ${monday.getDate()} – ${MONTH_NAMES[sunday.getMonth()]} ${sunday.getDate()}`;
+    for (const occStart of occurrences) {
+      const occEnd = new Date(occStart.getTime() + duration);
+      const startTime = `${pad(occStart.getHours())}:${pad(occStart.getMinutes())}`;
+      const endTime = `${pad(occEnd.getHours())}:${pad(occEnd.getMinutes())}`;
+      if (startTime === endTime) continue;
 
-    const label = summary ?? `${dayName} ${fmt12(startTime)} – ${fmt12(endTime)}`;
-    slots.push({ label, startTime, endTime, dateKey, dateLabel, weekKey, weekLabel });
+      const dayName = DAY_NAMES[occStart.getDay()];
+      const dateKey = toKey(occStart);
+      const dateLabel = `${dayName}, ${MONTH_NAMES[occStart.getMonth()]} ${occStart.getDate()}`;
+
+      const dow = occStart.getDay();
+      const daysToMon = dow === 0 ? -6 : 1 - dow;
+      const monday = new Date(occStart); monday.setDate(occStart.getDate() + daysToMon);
+      const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+      const weekKey = toKey(monday);
+      const weekLabel = `${MONTH_NAMES[monday.getMonth()]} ${monday.getDate()} – ${MONTH_NAMES[sunday.getMonth()]} ${sunday.getDate()}`;
+
+      const label = summary ?? `${dayName} ${fmt12(startTime)} – ${fmt12(endTime)}`;
+      allSlots.push({ label, startTime, endTime, dateKey, dateLabel, weekKey, weekLabel });
+    }
   }
-  return slots;
+
+  return allSlots;
 }
 
 // ── AI Assistant Popup ───────────────────────────────────────────────────────
