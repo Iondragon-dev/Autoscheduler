@@ -280,9 +280,9 @@ function parseICSToSlots(icsContent: string): ParsedSlotWithDate[] {
   const pad = (n: number) => String(n).padStart(2, "0");
   const toKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-  // Expansion window: 14 days ago → 60 days ahead
+  // Expansion window: 14 days ago → 2 months ahead
   const windowStart = new Date(); windowStart.setDate(windowStart.getDate() - 14); windowStart.setHours(0, 0, 0, 0);
-  const windowEnd = new Date(); windowEnd.setDate(windowEnd.getDate() + 60); windowEnd.setHours(23, 59, 59, 999);
+  const windowEnd = new Date(); windowEnd.setMonth(windowEnd.getMonth() + 2); windowEnd.setHours(23, 59, 59, 999);
 
   const TEACHING_KEYWORDS = [
     "teach", "slot", "lesson", "class", "session", "tutorial",
