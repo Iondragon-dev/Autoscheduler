@@ -1727,6 +1727,8 @@ export default function Teacher() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deleteAllConfirm, setDeleteAllConfirm] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
+  const [clearBookingsConfirm, setClearBookingsConfirm] = useState(false);
+  const [clearingBookings, setClearingBookings] = useState(false);
   const [expandedSlotId, setExpandedSlotId] = useState<number | null>(null);
   const [form, setForm] = useState<NewSlotForm>({ label: "", startTime: "", endTime: "" });
   const [formError, setFormError] = useState<string | null>(null);
@@ -1766,6 +1768,14 @@ export default function Teacher() {
     setDeleteAllConfirm(false);
     setExpandedSlotId(null);
     refetchSlots();
+    refetchBookings();
+  };
+
+  const handleClearBookings = async () => {
+    setClearingBookings(true);
+    await fetch(`${import.meta.env.BASE_URL}api/bookings`, { method: "DELETE" });
+    setClearingBookings(false);
+    setClearBookingsConfirm(false);
     refetchBookings();
   };
 
@@ -1853,7 +1863,32 @@ export default function Teacher() {
               <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-lg p-5">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-bold text-foreground text-lg">Available Slots</h2>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {/* Clear all bookings */}
+                    {bookings && bookings.length > 0 && (
+                      clearBookingsConfirm ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-amber-600 font-medium">Clear bookings?</span>
+                          <button
+                            onClick={handleClearBookings}
+                            disabled={clearingBookings}
+                            className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded-md font-semibold disabled:opacity-60"
+                          >
+                            {clearingBookings ? "Clearing…" : "Yes, clear"}
+                          </button>
+                          <button onClick={() => setClearBookingsConfirm(false)} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setClearBookingsConfirm(true); setDeleteAllConfirm(false); }}
+                          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-amber-600 transition-colors px-2 py-1 rounded-lg hover:bg-amber-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Clear bookings
+                        </button>
+                      )
+                    )}
+
+                    {/* Delete all slots */}
                     {slots && slots.length > 0 && (
                       deleteAllConfirm ? (
                         <div className="flex items-center gap-1.5">
@@ -1869,14 +1904,14 @@ export default function Teacher() {
                         </div>
                       ) : (
                         <button
-                          onClick={() => setDeleteAllConfirm(true)}
+                          onClick={() => { setDeleteAllConfirm(true); setClearBookingsConfirm(false); }}
                           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors px-2 py-1 rounded-lg hover:bg-destructive/10"
                         >
                           <Trash2 className="w-3.5 h-3.5" /> Delete all
                         </button>
                       )
                     )}
-                    <Button onClick={() => { setShowAddForm((v) => !v); setFormError(null); setDeleteAllConfirm(false); }} variant={showAddForm ? "outline" : "default"}>
+                    <Button onClick={() => { setShowAddForm((v) => !v); setFormError(null); setDeleteAllConfirm(false); setClearBookingsConfirm(false); }} variant={showAddForm ? "outline" : "default"}>
                       <Plus className="w-4 h-4 mr-1.5" />{showAddForm ? "Cancel" : "Add Slot"}
                     </Button>
                   </div>

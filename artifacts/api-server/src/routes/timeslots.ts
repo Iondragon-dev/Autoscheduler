@@ -71,6 +71,11 @@ router.patch("/timeslots/:id/blocked-times", async (req, res) => {
   res.json(serializeSlot(updated));
 });
 
+router.delete("/bookings", async (_req, res) => {
+  await db.delete(bookingsTable);
+  res.json({ message: "All bookings cleared" });
+});
+
 router.delete("/timeslots", async (_req, res) => {
   await db.delete(bookingsTable);
   await db.delete(timeSlotsTable);
