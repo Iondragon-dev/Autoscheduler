@@ -22,6 +22,7 @@ import JSZip from "jszip";
 
 interface NewSlotForm { label: string; startTime: string; endTime: string; }
 interface ParsedSlot { label: string; startTime: string; endTime: string; }
+interface ParsedSlotWithDate extends ParsedSlot { dateKey: string; dateLabel: string; }
 
 const ALL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DAY_SHORT: Record<string, string> = {
@@ -194,11 +195,12 @@ function dayOfSlot(label: string): string {
 }
 
 // ── ICS parser ───────────────────────────────────────────────────────────────
-function parseICSToSlots(icsContent: string): ParsedSlot[] {
+function parseICSToSlots(icsContent: string): ParsedSlotWithDate[] {
   const unfolded = icsContent.replace(/\r?\n[ \t]/g, "");
-  const slots: ParsedSlot[] = [];
+  const slots: ParsedSlotWithDate[] = [];
   const blocks = unfolded.split("BEGIN:VEVENT").slice(1);
   const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   for (const block of blocks) {
     const get = (key: string) => {
@@ -228,9 +230,11 @@ function parseICSToSlots(icsContent: string): ParsedSlot[] {
     const endTime = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
     if (startTime === endTime) continue; // skip zero-length events
 
-    const day = DAY_NAMES[start.getDay()];
-    const label = summary ? `${summary}` : `${day} ${fmt12(startTime)} – ${fmt12(endTime)}`;
-    slots.push({ label, startTime, endTime });
+    const dayName = DAY_NAMES[start.getDay()];
+    const dateKey = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
+    const dateLabel = `${dayName}, ${MONTH_NAMES[start.getMonth()]} ${start.getDate()}`;
+    const label = summary ?? `${dayName} ${fmt12(startTime)} – ${fmt12(endTime)}`;
+    slots.push({ label, startTime, endTime, dateKey, dateLabel });
   }
   return slots;
 }
@@ -290,6 +294,8 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
 
   const [icsError, setIcsError] = useState<string | null>(null);
   const [icsFileName, setIcsFileName] = useState<string | null>(null);
+  const [icsParsed, setIcsParsed] = useState<ParsedSlotWithDate[]>([]);
+  const [icsSelectedDate, setIcsSelectedDate] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const createSlot = useCreateTimeSlot();
@@ -357,9 +363,10 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
       setIcsError("No timed events found. Make sure the file contains calendar events with specific start and end times (all-day events are skipped).");
       return;
     }
-    setPendingSlots(parsed);
-    setAiMessage(`Found ${parsed.length} event${parsed.length !== 1 ? "s" : ""} in your calendar. Review and confirm below.`);
-    setStep("confirm");
+    setIcsParsed(parsed);
+    // Auto-select first date
+    const firstDate = parsed[0].dateKey;
+    setIcsSelectedDate(firstDate);
   }
 
   function handleAddEditOp() {
@@ -771,7 +778,54 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                       </p>
                     )}
 
-                    <Button variant="outline" className="w-full" onClick={() => setStep("days")}>
+                    {/* Day picker — shown once a file is successfully parsed */}
+                    {icsParsed.length > 0 && (() => {
+                      const uniqueDates = [...new Map(icsParsed.map(s => [s.dateKey, s.dateLabel])).entries()];
+                      const count = icsParsed.filter(s => s.dateKey === icsSelectedDate).length;
+                      return (
+                        <div className="space-y-3 pt-1">
+                          <div>
+                            <p className="text-sm font-medium text-foreground mb-2">Which day do you want to import?</p>
+                            <div className="flex flex-col gap-1.5 max-h-44 overflow-y-auto pr-0.5">
+                              {uniqueDates.map(([key, label]) => {
+                                const n = icsParsed.filter(s => s.dateKey === key).length;
+                                return (
+                                  <button
+                                    key={key}
+                                    type="button"
+                                    onClick={() => setIcsSelectedDate(key)}
+                                    className={cn(
+                                      "w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors text-left",
+                                      icsSelectedDate === key
+                                        ? "border-primary bg-primary/10 text-primary font-semibold"
+                                        : "border-border text-foreground hover:bg-muted"
+                                    )}
+                                  >
+                                    <span>{label}</span>
+                                    <span className="text-xs text-muted-foreground font-normal">{n} event{n !== 1 ? "s" : ""}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <Button
+                            className="w-full"
+                            disabled={!icsSelectedDate}
+                            onClick={() => {
+                              const forDay = icsParsed.filter(s => s.dateKey === icsSelectedDate);
+                              setPendingSlots(forDay);
+                              setAiMessage(`Importing ${forDay.length} event${forDay.length !== 1 ? "s" : ""} from ${uniqueDates.find(([k]) => k === icsSelectedDate)?.[1]}. Review and confirm below.`);
+                              setStep("confirm");
+                            }}
+                          >
+                            Import {count} event{count !== 1 ? "s" : ""}
+                            <ArrowRight className="w-4 h-4 ml-1.5" />
+                          </Button>
+                        </div>
+                      );
+                    })()}
+
+                    <Button variant="outline" className="w-full" onClick={() => { setIcsParsed([]); setIcsSelectedDate(""); setStep("days"); }}>
                       Back
                     </Button>
                   </motion.div>
