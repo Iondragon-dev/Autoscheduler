@@ -22,7 +22,7 @@ import JSZip from "jszip";
 
 interface NewSlotForm { label: string; startTime: string; endTime: string; }
 interface ParsedSlot { label: string; startTime: string; endTime: string; }
-interface ParsedSlotWithDate extends ParsedSlot { dateKey: string; dateLabel: string; }
+interface ParsedSlotWithDate extends ParsedSlot { dateKey: string; dateLabel: string; weekKey: string; weekLabel: string; }
 
 const ALL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DAY_SHORT: Record<string, string> = {
@@ -243,8 +243,17 @@ function parseICSToSlots(icsContent: string): ParsedSlotWithDate[] {
     const dayName = DAY_NAMES[start.getDay()];
     const dateKey = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
     const dateLabel = `${dayName}, ${MONTH_NAMES[start.getMonth()]} ${start.getDate()}`;
+
+    // Compute ISO week (Monday-anchored)
+    const dow = start.getDay(); // 0=Sun, 1=Mon...
+    const daysToMon = dow === 0 ? -6 : 1 - dow;
+    const monday = new Date(start); monday.setDate(start.getDate() + daysToMon);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    const weekKey = `${monday.getFullYear()}-${pad(monday.getMonth() + 1)}-${pad(monday.getDate())}`;
+    const weekLabel = `${MONTH_NAMES[monday.getMonth()]} ${monday.getDate()} – ${MONTH_NAMES[sunday.getMonth()]} ${sunday.getDate()}`;
+
     const label = summary ?? `${dayName} ${fmt12(startTime)} – ${fmt12(endTime)}`;
-    slots.push({ label, startTime, endTime, dateKey, dateLabel });
+    slots.push({ label, startTime, endTime, dateKey, dateLabel, weekKey, weekLabel });
   }
   return slots;
 }
@@ -616,7 +625,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     <p className="text-sm font-bold text-foreground">Scheduling Assistant</p>
                     <p className="text-xs text-muted-foreground">
                       {mode === "create" && step === "days" && "Step 1 of 2 — Pick your days"}
-                      {mode === "create" && step === "ics" && "Import from Google Calendar"}
+                      {mode === "create" && step === "ics" && "Import from Google Calendar — pick a week"}
                       {mode === "create" && step === "times" && "Step 2 of 2 — Set your hours"}
                       {mode === "create" && step === "processing" && "Generating your schedule…"}
                       {mode === "create" && step === "confirm" && "Ready to add slots"}
@@ -788,32 +797,34 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                       </p>
                     )}
 
-                    {/* Day picker — shown once a file is successfully parsed */}
+                    {/* Week picker — shown once a file is successfully parsed */}
                     {icsParsed.length > 0 && (() => {
                       const cutoff = new Date();
                       cutoff.setDate(cutoff.getDate() - 7);
                       const cutoffKey = cutoff.toISOString().slice(0, 10);
                       const filtered = icsParsed.filter(s => s.dateKey >= cutoffKey);
-                      const uniqueDates = [...new Map(filtered.map(s => [s.dateKey, s.dateLabel])).entries()];
-                      // If current selection was clipped, reset to first available date
-                      const activeDate = uniqueDates.find(([k]) => k === icsSelectedDate)
+                      const uniqueWeeks = [...new Map(filtered.map(s => [s.weekKey, s.weekLabel])).entries()];
+                      // If current selection was clipped, fall back to first available week
+                      const activeWeek = uniqueWeeks.find(([k]) => k === icsSelectedDate)
                         ? icsSelectedDate
-                        : uniqueDates[0]?.[0] ?? "";
-                      const count = filtered.filter(s => s.dateKey === activeDate).length;
-                      if (uniqueDates.length === 0) {
+                        : uniqueWeeks[0]?.[0] ?? "";
+                      const forWeek = filtered.filter(s => s.weekKey === activeWeek);
+                      const count = forWeek.length;
+
+                      if (uniqueWeeks.length === 0) {
                         return (
                           <p className="text-xs text-muted-foreground text-center py-2">
-                            No events found in the past week or upcoming dates in this file.
+                            No teaching events found in the past week or upcoming dates in this file.
                           </p>
                         );
                       }
                       return (
                         <div className="space-y-3 pt-1">
                           <div>
-                            <p className="text-sm font-medium text-foreground mb-2">Which day do you want to import?</p>
-                            <div className="flex flex-col gap-1.5 max-h-44 overflow-y-auto pr-0.5">
-                              {uniqueDates.map(([key, label]) => {
-                                const n = filtered.filter(s => s.dateKey === key).length;
+                            <p className="text-sm font-medium text-foreground mb-2">Which week do you want to import?</p>
+                            <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto pr-0.5">
+                              {uniqueWeeks.map(([key, label]) => {
+                                const n = filtered.filter(s => s.weekKey === key).length;
                                 return (
                                   <button
                                     key={key}
@@ -821,7 +832,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                                     onClick={() => setIcsSelectedDate(key)}
                                     className={cn(
                                       "w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors text-left",
-                                      activeDate === key
+                                      activeWeek === key
                                         ? "border-primary bg-primary/10 text-primary font-semibold"
                                         : "border-border text-foreground hover:bg-muted"
                                     )}
@@ -833,13 +844,26 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                               })}
                             </div>
                           </div>
+
+                          {/* Preview the individual days in the selected week */}
+                          {forWeek.length > 0 && (
+                            <div className="bg-muted/50 rounded-lg px-3 py-2.5 space-y-1">
+                              {forWeek.map((s, i) => (
+                                <div key={i} className="text-xs text-muted-foreground flex items-center gap-1.5">
+                                  <Clock className="w-3 h-3 shrink-0 text-primary/50" />
+                                  <span className="font-medium text-foreground/70">{s.dateLabel}:</span>
+                                  <span>{s.label} ({fmt12(s.startTime)} – {fmt12(s.endTime)})</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
                           <Button
                             className="w-full"
-                            disabled={!activeDate || count === 0}
+                            disabled={!activeWeek || count === 0}
                             onClick={() => {
-                              const forDay = filtered.filter(s => s.dateKey === activeDate);
-                              setPendingSlots(forDay);
-                              setAiMessage(`Importing ${forDay.length} event${forDay.length !== 1 ? "s" : ""} from ${uniqueDates.find(([k]) => k === activeDate)?.[1]}. Review and confirm below.`);
+                              setPendingSlots(forWeek);
+                              setAiMessage(`Importing ${count} event${count !== 1 ? "s" : ""} from the week of ${uniqueWeeks.find(([k]) => k === activeWeek)?.[1]}. Review and confirm below.`);
                               setStep("confirm");
                             }}
                           >
