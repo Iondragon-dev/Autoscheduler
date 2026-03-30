@@ -230,6 +230,16 @@ function parseICSToSlots(icsContent: string): ParsedSlotWithDate[] {
     const endTime = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
     if (startTime === endTime) continue; // skip zero-length events
 
+    // Only import events whose title matches teaching-related keywords
+    const TEACHING_KEYWORDS = [
+      "teach", "slot", "lesson", "class", "session", "tutorial",
+      "office hours", "tutor", "instruction", "lecture", "seminar",
+      "coaching", "training", "workshop",
+    ];
+    const summaryLower = (summary ?? "").toLowerCase();
+    const isTeachingEvent = TEACHING_KEYWORDS.some(kw => summaryLower.includes(kw));
+    if (!isTeachingEvent) continue;
+
     const dayName = DAY_NAMES[start.getDay()];
     const dateKey = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
     const dateLabel = `${dayName}, ${MONTH_NAMES[start.getMonth()]} ${start.getDate()}`;
@@ -360,7 +370,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
 
     const parsed = parseICSToSlots(icsContent);
     if (parsed.length === 0) {
-      setIcsError("No timed events found. Make sure the file contains calendar events with specific start and end times (all-day events are skipped).");
+      setIcsError("No teaching-related events found. Only events with words like \"teaching\", \"slot\", \"lesson\", \"class\", \"session\", \"tutorial\", or similar in the title are imported.");
       return;
     }
     setIcsParsed(parsed);
