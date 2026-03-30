@@ -1030,7 +1030,8 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                           {pendingSlots.map((s, i) => (
                             <div key={i} className="text-xs text-muted-foreground flex items-center gap-1.5">
                               <Clock className="w-3 h-3 shrink-0 text-primary/60" />
-                              {s.label}
+                              <span className="truncate">{s.label}</span>
+                              <span className="shrink-0 text-primary/50">· {fmt12(s.startTime)} – {fmt12(s.endTime)}</span>
                             </div>
                           ))}
                         </div>
