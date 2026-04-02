@@ -1,110 +1,183 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar, Clock, User, Mail, AlertCircle, ArrowRight, Star, X } from "lucide-react";
+import {
+  AlertCircle, ArrowRight, ArrowLeft, Check,
+  User, Mail, Clock, CalendarDays, Timer,
+} from "lucide-react";
 import { useGetTimeSlots, useCreateBooking } from "@workspace/api-client-react";
-import type { Booking, TimeSlot } from "@workspace/api-client-react";
+import type { Booking } from "@workspace/api-client-react";
 import { Link } from "wouter";
-
-import { useBookingForm } from "@/hooks/use-booking-form";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { fmt12, fmtPriority, makeValue, toMins } from "@/lib/booking-utils";
+import { fmt12, fromMins, toMins } from "@/lib/booking-utils";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type Choice = {
+  slotId: number | null;
+  duration: number | null;
+  isCustomDuration: boolean;
+  customDurationStr: string;
+  start: string | null;
+};
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
+const PRIORITY_LABELS = ["1st", "2nd", "3rd"] as const;
 
-const PRIORITY_META = [
-  { rank: 1, label: "1st Choice", starColor: "text-amber-400", fillStar: true, activeBg: "bg-amber-50 border-amber-400", badge: "bg-amber-400 text-white" },
-  { rank: 2, label: "2nd Choice", starColor: "text-slate-400", fillStar: false, activeBg: "bg-slate-50 border-slate-400", badge: "bg-slate-400 text-white" },
-  { rank: 3, label: "3rd Choice", starColor: "text-slate-300", fillStar: false, activeBg: "bg-slate-50/60 border-slate-300", badge: "bg-slate-300 text-white" },
+const PRIORITY_COLORS = [
+  "bg-amber-500/15 text-amber-700 border-amber-400/40",
+  "bg-blue-500/15 text-blue-700 border-blue-400/40",
+  "bg-slate-500/15 text-slate-700 border-slate-400/40",
+] as const;
+
+const DURATION_OPTIONS = [
+  { label: "10 min", value: 10 },
+  { label: "15 min", value: 15 },
+  { label: "20 min", value: 20 },
+  { label: "30 min", value: 30 },
+  { label: "45 min", value: 45 },
+  { label: "1 hour", value: 60 },
 ];
 
-// ─── Component ───────────────────────────────────────────────────────────────
+const TOTAL_PAGES = 10;
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function generateStartTimes(
+  slotStart: string,
+  slotEnd: string,
+  durationMins: number,
+  blockedTimes: { start: string; end: string }[],
+): string[] {
+  const winStart = toMins(slotStart);
+  const winEnd = toMins(slotEnd);
+  const STEP = 15;
+  const seen = new Set<string>();
+  const times: string[] = [];
+  for (let t = winStart; t + durationMins <= winEnd; t += STEP) {
+    const tEnd = t + durationMins;
+    const blocked = blockedTimes.some(
+      bt => t < toMins(bt.end) && tEnd > toMins(bt.start),
+    );
+    if (!blocked) {
+      const s = fromMins(t);
+      if (!seen.has(s)) { seen.add(s); times.push(s); }
+    }
+  }
+  return times;
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function Home() {
-  const { data: slots, isLoading: isLoadingSlots, isError: isSlotsError } = useGetTimeSlots();
+  const { data: slots, isLoading, isError } = useGetTimeSlots();
   const createBooking = useCreateBooking();
 
-  const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
+  const [direction, setDirection] = useState(1);
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
-  const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState("");
-  const form = useBookingForm();
-  const { register, handleSubmit, formState: { errors }, watch, setValue } = form;
 
-  const p1 = watch("priority1");
-  const p2 = watch("priority2");
-  const p3 = watch("priority3");
-  const priorities = [p1, p2, p3];
-  const priorityFields = ["priority1", "priority2", "priority3"] as const;
+  const [choices, setChoices] = useState<Choice[]>([
+    { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null },
+    { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null },
+    { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null },
+  ]);
 
-  const availableSlots = slots?.filter((s) => s.available) ?? [];
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [detailsErrors, setDetailsErrors] = useState<{ name?: string; email?: string }>({});
 
-  const slotsWithBlocks = availableSlots;
+  const availableSlots = (slots ?? []).filter(s => s.available);
 
-  // Auto-select first available day when slots load or duration changes
-  useEffect(() => {
-    if (slotsWithBlocks.length === 0) { setSelectedSlotId(null); return; }
-    const ids = slotsWithBlocks.map((s) => s.id);
-    if (selectedSlotId === null || !ids.includes(selectedSlotId)) {
-      setSelectedSlotId(ids[0]);
+  const isDetails = page === 9;
+  const choiceIdx = Math.min(Math.floor(page / 3), 2);
+  const subPage = isDetails ? -1 : page % 3;
+
+  const updateChoice = (idx: number, updates: Partial<Choice>) =>
+    setChoices(prev => prev.map((c, i) => i === idx ? { ...c, ...updates } : c));
+
+  const getEffectiveDuration = (c: Choice): number | null => {
+    if (c.isCustomDuration) {
+      const n = parseInt(c.customDurationStr, 10);
+      return Number.isFinite(n) && n > 0 ? n : null;
     }
-  }, [slotsWithBlocks.map((s) => s.id).join(",")]);
-
-  // Reset custom time inputs when the selected slot changes
-  useEffect(() => { setCustomStart(""); setCustomEnd(""); }, [selectedSlotId]);
-
-  // Which priority index to fill next (0, 1, or 2; or null if all filled)
-  const nextSlot = priorities.findIndex((p) => !p);
-
-  const handleBlockClick = useCallback((value: string, slotId: number) => {
-    const existingIdx = priorities.indexOf(value);
-    if (existingIdx !== -1) {
-      // Deselect: clear this priority, shift subsequent ones down
-      const updated = [...priorities];
-      updated.splice(existingIdx, 1);
-      updated.push("");
-      priorityFields.forEach((f, i) => setValue(f, updated[i] ?? "", { shouldValidate: false }));
-      // Update timeSlotId from new priority1
-      const newP1 = updated[0];
-      if (newP1) {
-        const newSlotId = Number(newP1.split("|")[0]);
-        setValue("timeSlotId", newSlotId, { shouldValidate: false });
-      }
-    } else if (nextSlot !== -1) {
-      // Assign to next open slot
-      setValue(priorityFields[nextSlot], value, { shouldValidate: false });
-      // Keep timeSlotId in sync with priority1's slot
-      if (nextSlot === 0) {
-        setValue("timeSlotId", slotId, { shouldValidate: false });
-      }
-    }
-  }, [priorities, nextSlot, setValue]);
-
-  const onSubmit = (values: any) => {
-    createBooking.mutate(
-      { data: values },
-      {
-        onSuccess: (data) => {
-          setConfirmedBooking(data);
-          window.scrollTo({ top: 0, behavior: "smooth" });
-        },
-      }
-    );
+    return c.duration;
   };
 
-  const allFilled = priorities.every(Boolean);
+  const canGoNext = (): boolean => {
+    if (isDetails) return false;
+    const c = choices[choiceIdx];
+    if (subPage === 0) return c.slotId !== null;
+    if (subPage === 1) {
+      const d = getEffectiveDuration(c);
+      return d !== null && d > 0 && d <= 480;
+    }
+    if (subPage === 2) return c.start !== null;
+    return false;
+  };
+
+  const goNext = () => { setDirection(1); setPage(p => p + 1); };
+  const goBack = () => { setDirection(-1); setPage(p => p - 1); };
+
+  const handleSubmit = () => {
+    const errs: typeof detailsErrors = {};
+    if (!name.trim()) errs.name = "Name is required";
+    if (!email.trim()) errs.email = "Email is required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errs.email = "Please enter a valid email";
+    if (Object.keys(errs).length) { setDetailsErrors(errs); return; }
+
+    const priorities = choices.map(c => {
+      const dur = getEffectiveDuration(c)!;
+      const end = fromMins(toMins(c.start!) + dur);
+      return `${c.slotId}|${c.start}-${end}`;
+    });
+
+    createBooking.mutate({
+      data: {
+        timeSlotId: choices[0].slotId!,
+        name: name.trim(),
+        email: email.trim(),
+        priority1: priorities[0],
+        priority2: priorities[1],
+        priority3: priorities[2],
+      },
+    }, {
+      onSuccess: d => {
+        setConfirmedBooking(d);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      },
+    });
+  };
+
+  const currentC = choices[choiceIdx];
+  const currentSlot = availableSlots.find(s => s.id === currentC?.slotId);
+  const currentDur = currentC ? getEffectiveDuration(currentC) : null;
+  const timeOptions = currentSlot && currentDur
+    ? generateStartTimes(currentSlot.startTime, currentSlot.endTime, currentDur, currentSlot.blockedTimes ?? [])
+    : [];
+
+  const progressPct = ((page + 1) / TOTAL_PAGES) * 100;
+
+  const subPageLabel = isDetails
+    ? "Your details"
+    : ["Which day?", "How long?", "What time?"][subPage] ?? "";
+
+  const pageVariants = {
+    enter: (d: number) => ({ opacity: 0, x: d * 50 }),
+    center: { opacity: 1, x: 0 },
+    exit: (d: number) => ({ opacity: 0, x: d * -50 }),
+  };
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 overflow-hidden">
+    <div className="relative min-h-screen flex items-start justify-center py-8 px-4 sm:px-6 overflow-hidden">
       <img
         src={`${import.meta.env.BASE_URL}images/bg-mesh.png`}
         alt=""
         className="fixed inset-0 w-full h-full object-cover opacity-60 mix-blend-multiply pointer-events-none"
       />
 
-      <div className="relative w-full max-w-2xl mx-auto z-10">
+      <div className="relative w-full max-w-lg mx-auto z-10">
         <div className="flex justify-end mb-3">
           <Link href="/teacher" className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
             Teacher Area →
@@ -114,347 +187,457 @@ export default function Home() {
         <AnimatePresence mode="wait">
           {!confirmedBooking ? (
             <motion.div
-              key="booking-form"
+              key="form"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, filter: "blur(4px)" }}
-              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="bg-card/80 backdrop-blur-2xl rounded-[2rem] shadow-2xl shadow-black/5 border border-white/50 p-6 sm:p-10"
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.35 }}
+              className="bg-card/90 backdrop-blur-2xl rounded-[2rem] shadow-2xl border border-white/50 overflow-hidden"
             >
-              <div className="mb-12 text-center space-y-6">
-                <div>
-                  <p className="text-sm font-semibold text-primary/70 uppercase tracking-widest mb-2">Welcome to Session Booking</p>
-                  <h1 className="text-4xl font-display font-bold text-foreground mb-3">Book a Session</h1>
-                  <p className="text-lg text-muted-foreground">
-                    Pick 3 preferred times from any available day, then submit your details.
-                  </p>
+              {/* ── Header / progress ── */}
+              <div className="bg-primary/5 border-b border-border/40 px-6 sm:px-8 pt-6 pb-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs font-semibold text-primary/70 uppercase tracking-widest">Session Booking</p>
+                    <h1 className="text-lg font-bold text-foreground mt-0.5">
+                      {isDetails
+                        ? "Almost done — your details"
+                        : `${PRIORITY_LABELS[choiceIdx]} preference · ${subPageLabel}`}
+                    </h1>
+                  </div>
+                  <span className="text-sm font-bold text-muted-foreground tabular-nums">
+                    {page + 1}<span className="font-normal">/{TOTAL_PAGES}</span>
+                  </span>
                 </div>
-                <div className="inline-block rounded-xl bg-primary/5 border border-primary/20 px-4 py-3">
-                  <p className="text-sm text-foreground font-medium">
-                    We'll assign you to one of your preferences based on availability.
-                  </p>
+
+                {/* Progress bar */}
+                <div className="h-2 bg-muted/50 rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-primary rounded-full"
+                    initial={false}
+                    animate={{ width: `${progressPct}%` }}
+                    transition={{ duration: 0.4, ease: "easeOut" }}
+                  />
+                </div>
+
+                {/* Step pills */}
+                <div className="flex gap-1 mt-2.5">
+                  {Array.from({ length: TOTAL_PAGES }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "h-1 rounded-full flex-1 transition-all duration-300",
+                        i <= page ? "bg-primary/70" : "bg-muted",
+                      )}
+                    />
+                  ))}
                 </div>
               </div>
 
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-10">
+              {/* ── Page body ── */}
+              <div className="min-h-[320px]">
+                <AnimatePresence mode="wait" custom={direction}>
+                  <motion.div
+                    key={page}
+                    custom={direction}
+                    variants={pageVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                    className="px-6 sm:px-8 py-6 space-y-5"
+                  >
 
-                {/* Step 1: Ranked preference picking */}
-                <div>
-                  <div className="flex items-center space-x-2 mb-1">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">1</div>
-                    <h2 className="text-xl font-bold font-display">Rank Your Preferred Times</h2>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-5 ml-10">
-                    Pick 3 time slots from any day — tap a slot to select it, tap again to remove it.
-                  </p>
-
-                  {/* Priority summary chips */}
-                  <div className="flex flex-wrap gap-2 mb-6">
-                    {PRIORITY_META.map((meta, i) => {
-                      const val = priorities[i];
-                      return (
-                        <div
-                          key={i}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all",
-                            val
-                              ? "border-transparent bg-primary/10 text-primary"
-                              : i === nextSlot
-                              ? "border-primary/40 bg-primary/5 text-primary/60 animate-pulse"
-                              : "border-border/40 bg-muted/30 text-muted-foreground/50"
-                          )}
-                        >
-                          <Star className={cn("w-3 h-3", meta.starColor, meta.fillStar ? "fill-current" : "")} />
-                          {meta.label}
-                          {val && (
-                            <span className="ml-1 text-foreground/70 font-normal">
-                              {fmtPriority(val, availableSlots)}
-                            </span>
-                          )}
-                          {val && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const updated = [...priorities];
-                                updated.splice(i, 1);
-                                updated.push("");
-                                priorityFields.forEach((f, j) => setValue(f, updated[j] ?? "", { shouldValidate: false }));
-                                if (i === 0) {
-                                  const newP1 = updated[0];
-                                  if (newP1) setValue("timeSlotId", Number(newP1.split("|")[0]), { shouldValidate: false });
-                                }
-                              }}
-                              className="ml-0.5 text-muted-foreground hover:text-foreground"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          )}
+                    {/* ────── DAY PICKER (subPage === 0) ────── */}
+                    {subPage === 0 && !isDetails && (
+                      <>
+                        <div>
+                          <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                            <CalendarDays className="w-4 h-4 text-primary" />
+                            Which day works best?
+                          </h2>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Select an availability block for your {PRIORITY_LABELS[choiceIdx]} choice.
+                          </p>
                         </div>
-                      );
-                    })}
-                  </div>
 
-                  {/* Slots: day picker then sub-blocks */}
-                  {isLoadingSlots ? (
-                    <div className="flex gap-2">
-                      {[1, 2, 3].map((i) => <div key={i} className="h-10 w-28 rounded-xl bg-muted/60 animate-pulse" />)}
-                    </div>
-                  ) : isSlotsError ? (
-                    <div className="p-6 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-center flex flex-col items-center">
-                      <AlertCircle className="w-8 h-8 mb-2" />
-                      <p>Failed to load available times. Please try refreshing.</p>
-                    </div>
-                  ) : slotsWithBlocks.length === 0 ? (
-                    <div className="p-8 rounded-xl border-2 border-dashed border-border text-center text-muted-foreground">
-                      No time slots available right now. Please check back later.
-                    </div>
-                  ) : (
-                    <>
-                      {/* Day picker */}
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {slotsWithBlocks.map((slot) => {
-                          const isSelected = selectedSlotId === slot.id;
-                          const picksFromThisDay = priorities.filter(
-                            (p) => p && Number(p.split("|")[0]) === slot.id
-                          ).length;
-                          return (
-                            <button
-                              key={slot.id}
-                              type="button"
-                              onClick={() => setSelectedSlotId(slot.id)}
-                              className={cn(
-                                "relative flex flex-col items-start px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all",
-                                isSelected
-                                  ? "border-primary bg-primary/10 text-primary"
-                                  : "border-border bg-card hover:border-primary/40 hover:bg-primary/5 text-foreground"
-                              )}
-                            >
-                              <span>{slot.label}</span>
-                              <span className={cn("text-[10px] font-normal", isSelected ? "text-primary/70" : "text-muted-foreground")}>
-                                {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
-                              </span>
-                              {picksFromThisDay > 0 && (
-                                <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold shadow">
-                                  {picksFromThisDay}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Time entry for selected day */}
-                      {selectedSlotId !== null && (() => {
-                        const slot = slotsWithBlocks.find((s) => s.id === selectedSlotId);
-                        if (!slot) return null;
-                        const customValue = customStart && customEnd ? makeValue(slot.id, customStart, customEnd) : "";
-                        const customAssignedIdx = customValue ? priorities.indexOf(customValue) : -1;
-                        const isCustomAssigned = customAssignedIdx !== -1;
-                        const customMeta = isCustomAssigned ? PRIORITY_META[customAssignedIdx] : null;
-                        const isCustomValid = !!(
-                          customStart && customEnd &&
-                          toMins(customStart) >= toMins(slot.startTime) &&
-                          toMins(customEnd) <= toMins(slot.endTime) &&
-                          toMins(customStart) < toMins(customEnd)
-                        );
-                        const canAddCustom = isCustomValid && !isCustomAssigned && nextSlot !== -1;
-                        return (
-                          <AnimatePresence mode="wait">
-                            <motion.div
-                              key={selectedSlotId}
-                              initial={{ opacity: 0, y: 8 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: -8 }}
-                              transition={{ duration: 0.2 }}
-                              className="rounded-2xl border border-border bg-muted/30 p-4 space-y-3"
-                            >
-                              <div>
-                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">
-                                  Enter your time — {slot.label.split(" ")[0]}
-                                </p>
-                                <p className="text-[11px] text-muted-foreground">
-                                  Available window: {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
-                                </p>
-                                {slot.blockedTimes && slot.blockedTimes.length > 0 && (
-                                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                    <span className="text-[11px] text-orange-600 font-semibold flex items-center gap-1">
-                                      <AlertCircle className="w-3 h-3" /> Unavailable:
-                                    </span>
-                                    {slot.blockedTimes.map((bt, i) => (
-                                      <span key={i} className="text-[11px] bg-orange-50 border border-orange-200 text-orange-700 rounded-md px-1.5 py-0.5 font-medium">
-                                        {fmt12(bt.start)} – {fmt12(bt.end)}
-                                      </span>
-                                    ))}
+                        {isLoading ? (
+                          <div className="space-y-2">
+                            {[1, 2, 3].map(i => (
+                              <div key={i} className="h-16 rounded-xl bg-muted/50 animate-pulse" />
+                            ))}
+                          </div>
+                        ) : isError ? (
+                          <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm flex gap-2 items-center">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            Failed to load available times. Please refresh.
+                          </div>
+                        ) : availableSlots.length === 0 ? (
+                          <div className="p-6 rounded-xl border-2 border-dashed border-border text-center text-muted-foreground text-sm">
+                            No availability right now. Please check back later.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {availableSlots.map(slot => {
+                              const sel = currentC.slotId === slot.id;
+                              return (
+                                <button
+                                  key={slot.id}
+                                  type="button"
+                                  onClick={() => updateChoice(choiceIdx, { slotId: slot.id, duration: null, start: null })}
+                                  className={cn(
+                                    "w-full flex items-center justify-between px-4 py-3.5 rounded-xl border-2 text-left transition-all",
+                                    sel
+                                      ? "border-primary bg-primary/10"
+                                      : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5",
+                                  )}
+                                >
+                                  <div>
+                                    <div className={cn("font-semibold text-sm", sel ? "text-primary" : "text-foreground")}>
+                                      {slot.label}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                                      <Clock className="w-3 h-3" />
+                                      {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
+                                    </div>
                                   </div>
-                                )}
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <div className="flex items-center gap-1.5">
-                                  <input
-                                    type="time"
-                                    value={customStart}
-                                    min={slot.startTime}
-                                    max={slot.endTime}
-                                    onChange={(e) => { setCustomStart(e.target.value); setCustomEnd(""); }}
-                                    className="text-sm bg-background border border-border rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
-                                  />
-                                  <span className="text-muted-foreground text-xs">to</span>
-                                  <input
-                                    type="time"
-                                    value={customEnd}
-                                    min={customStart || slot.startTime}
-                                    max={slot.endTime}
-                                    disabled={!customStart}
-                                    onChange={(e) => setCustomEnd(e.target.value)}
-                                    className="text-sm bg-background border border-border rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-40"
-                                  />
-                                </div>
-                                {isCustomAssigned ? (
+                                  <div className={cn(
+                                    "w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
+                                    sel ? "bg-primary border-primary" : "border-muted-foreground/30",
+                                  )}>
+                                    {sel && <Check className="w-3 h-3 text-primary-foreground" />}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* ────── DURATION PICKER (subPage === 1) ────── */}
+                    {subPage === 1 && !isDetails && (() => {
+                      const c = choices[choiceIdx];
+                      return (
+                        <>
+                          <div>
+                            <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                              <Timer className="w-4 h-4 text-primary" />
+                              How long do you need?
+                            </h2>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Choose a session duration for your {PRIORITY_LABELS[choiceIdx]} choice.
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            {DURATION_OPTIONS.map(opt => {
+                              const sel = !c.isCustomDuration && c.duration === opt.value;
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => updateChoice(choiceIdx, { duration: opt.value, isCustomDuration: false, start: null })}
+                                  className={cn(
+                                    "py-3 rounded-xl border-2 text-sm font-semibold transition-all flex flex-col items-center gap-0.5",
+                                    sel
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 text-foreground",
+                                  )}
+                                >
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+
+                            <button
+                              type="button"
+                              onClick={() => updateChoice(choiceIdx, { isCustomDuration: true, duration: null, start: null })}
+                              className={cn(
+                                "py-3 rounded-xl border-2 text-sm font-semibold transition-all col-span-3",
+                                c.isCustomDuration
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 text-foreground",
+                              )}
+                            >
+                              Other (enter minutes)
+                            </button>
+                          </div>
+
+                          {c.isCustomDuration && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              className="space-y-1"
+                            >
+                              <label className="text-sm font-medium text-foreground">
+                                Duration in minutes
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={480}
+                                value={c.customDurationStr}
+                                onChange={e => updateChoice(choiceIdx, { customDurationStr: e.target.value, start: null })}
+                                placeholder="e.g. 25"
+                                className="w-full text-sm bg-background border border-border rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
+                                autoFocus
+                              />
+                            </motion.div>
+                          )}
+                        </>
+                      );
+                    })()}
+
+                    {/* ────── TIME PICKER (subPage === 2) ────── */}
+                    {subPage === 2 && !isDetails && (() => {
+                      const c = choices[choiceIdx];
+                      const slot = availableSlots.find(s => s.id === c.slotId);
+                      const dur = getEffectiveDuration(c);
+                      const times = slot && dur
+                        ? generateStartTimes(slot.startTime, slot.endTime, dur, slot.blockedTimes ?? [])
+                        : [];
+
+                      return (
+                        <>
+                          <div>
+                            <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                              <Clock className="w-4 h-4 text-primary" />
+                              What time works for you?
+                            </h2>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Available window: {slot ? `${fmt12(slot.startTime)} – ${fmt12(slot.endTime)}` : "—"}.{" "}
+                              Session is <span className="font-semibold text-foreground">{dur} min</span>.
+                            </p>
+                          </div>
+
+                          {times.length === 0 ? (
+                            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm flex gap-2 items-start">
+                              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                              <span>
+                                No available start times for that duration. Go back and choose a shorter session or a different day.
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap gap-2 max-h-72 overflow-y-auto pr-1">
+                              {times.map(t => {
+                                const endStr = fromMins(toMins(t) + dur!);
+                                const sel = c.start === t;
+                                return (
                                   <button
+                                    key={t}
                                     type="button"
-                                    onClick={() => handleBlockClick(customValue, slot.id)}
-                                    className={cn("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 shadow-sm", customMeta!.activeBg)}
-                                  >
-                                    <span className={cn("font-bold", customMeta!.starColor)}>{customAssignedIdx + 1}</span>
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    disabled={!canAddCustom}
-                                    onClick={() => { if (canAddCustom) handleBlockClick(customValue, slot.id); }}
+                                    onClick={() => updateChoice(choiceIdx, { start: t })}
                                     className={cn(
-                                      "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all",
-                                      canAddCustom
-                                        ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90"
-                                        : "bg-muted border-border text-muted-foreground/50 cursor-not-allowed"
+                                      "flex flex-col items-center px-3.5 py-2.5 rounded-xl border-2 transition-all",
+                                      sel
+                                        ? "border-primary bg-primary/10 text-primary"
+                                        : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 text-foreground",
                                     )}
                                   >
-                                    + Add
+                                    <span className="text-sm font-bold">{fmt12(t)}</span>
+                                    <span className="text-[10px] text-muted-foreground">to {fmt12(endStr)}</span>
                                   </button>
-                                )}
-                                {customStart && customEnd && !isCustomValid && (
-                                  <p className="text-[10px] text-destructive w-full">
-                                    Must be within {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
-                                  </p>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+
+                    {/* ────── DETAILS PAGE (page === 9) ────── */}
+                    {isDetails && (
+                      <>
+                        <div>
+                          <h2 className="text-base font-bold text-foreground">Almost done!</h2>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Enter your details and we'll confirm your booking based on your preferences.
+                          </p>
+                        </div>
+
+                        {/* Summary */}
+                        <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-2">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                            Your 3 preferences
+                          </p>
+                          {choices.map((c, i) => {
+                            const slot = availableSlots.find(s => s.id === c.slotId);
+                            const dur = getEffectiveDuration(c);
+                            const endStr = c.start && dur ? fromMins(toMins(c.start) + dur) : null;
+                            return (
+                              <div key={i} className="flex items-center gap-2.5 text-sm">
+                                <span className={cn("text-xs font-bold px-2 py-0.5 rounded-md border shrink-0", PRIORITY_COLORS[i])}>
+                                  {PRIORITY_LABELS[i]}
+                                </span>
+                                <span className="font-medium text-foreground truncate">{slot?.label ?? "—"}</span>
+                                {c.start && endStr && (
+                                  <span className="text-muted-foreground text-xs shrink-0">
+                                    {fmt12(c.start)} – {fmt12(endStr)}
+                                  </span>
                                 )}
                               </div>
-                            </motion.div>
-                          </AnimatePresence>
-                        );
-                      })()}
-                    </>
-                  )}
+                            );
+                          })}
+                        </div>
 
-                  {/* Priority validation errors */}
-                  {(errors.priority1 || errors.priority2 || errors.priority3) && (
-                    <p className="text-sm font-medium text-destructive flex items-center gap-1 mt-3">
-                      <AlertCircle className="w-4 h-4 shrink-0" />
-                      Please select all 3 preferred times before submitting.
-                    </p>
-                  )}
-                </div>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-1.5 flex items-center gap-1.5">
+                              <User className="w-4 h-4 text-muted-foreground" />Full Name
+                            </label>
+                            <Input
+                              value={name}
+                              onChange={e => { setName(e.target.value); setDetailsErrors(p => ({ ...p, name: undefined })); }}
+                              placeholder="Jane Doe"
+                              error={!!detailsErrors.name}
+                            />
+                            {detailsErrors.name && (
+                              <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" />{detailsErrors.name}
+                              </p>
+                            )}
+                          </div>
 
-                <div className="h-px w-full bg-gradient-to-r from-transparent via-border to-transparent" />
+                          <div>
+                            <label className="block text-sm font-semibold text-foreground mb-1.5 flex items-center gap-1.5">
+                              <Mail className="w-4 h-4 text-muted-foreground" />Email Address
+                            </label>
+                            <Input
+                              type="email"
+                              value={email}
+                              onChange={e => { setEmail(e.target.value); setDetailsErrors(p => ({ ...p, email: undefined })); }}
+                              placeholder="jane@example.com"
+                              error={!!detailsErrors.email}
+                            />
+                            {detailsErrors.email && (
+                              <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" />{detailsErrors.email}
+                              </p>
+                            )}
+                          </div>
+                        </div>
 
-                {/* Step 2: Personal Details */}
-                <div className="space-y-5">
-                  <div className="flex items-center space-x-2 mb-4">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-sm">2</div>
-                    <h2 className="text-xl font-bold font-display">Your Details</h2>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-                      <User className="w-4 h-4 text-muted-foreground" />Full Name
-                    </label>
-                    <Input placeholder="Jane Doe" {...register("name")} error={!!errors.name} />
-                    {errors.name && (
-                      <p className="text-sm font-medium text-destructive mt-1.5 flex items-center gap-1">
-                        <AlertCircle className="w-4 h-4" />{errors.name.message}
-                      </p>
+                        {createBooking.isError && (
+                          <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm flex gap-2 items-center">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            Failed to submit. Please try again.
+                          </div>
+                        )}
+                      </>
                     )}
-                  </div>
 
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-muted-foreground" />Email Address
-                    </label>
-                    <Input type="email" placeholder="jane@example.com" {...register("email")} error={!!errors.email} />
-                    {errors.email && (
-                      <p className="text-sm font-medium text-destructive mt-1.5 flex items-center gap-1">
-                        <AlertCircle className="w-4 h-4" />{errors.email.message}
-                      </p>
-                    )}
-                  </div>
-                </div>
+                  </motion.div>
+                </AnimatePresence>
+              </div>
 
-                {createBooking.isError && (
-                  <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm font-medium">
-                    Failed to submit. Please try again.
-                  </div>
+              {/* ── Navigation footer ── */}
+              <div className="px-6 sm:px-8 pb-6 pt-3 border-t border-border/30 flex items-center justify-between">
+                {page > 0 ? (
+                  <button
+                    onClick={goBack}
+                    className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-2 rounded-lg hover:bg-muted/50"
+                  >
+                    <ArrowLeft className="w-4 h-4" />Back
+                  </button>
+                ) : <div />}
+
+                {!isDetails ? (
+                  <button
+                    onClick={goNext}
+                    disabled={!canGoNext()}
+                    className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    Next <ArrowRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSubmit}
+                    disabled={createBooking.isPending}
+                    className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-primary/90 disabled:opacity-40 transition-all"
+                  >
+                    {createBooking.isPending ? "Submitting…" : "Submit Request"}
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
                 )}
-
-                <Button type="submit" className="w-full text-lg h-14" isLoading={createBooking.isPending} disabled={!allFilled}>
-                  Submit Request
-                  <ArrowRight className="w-5 h-5 ml-2" />
-                </Button>
-                <p className="text-center text-sm text-muted-foreground -mt-6">
-                  The teacher will confirm a time based on your preferences.
-                </p>
-              </form>
+              </div>
             </motion.div>
 
           ) : (
+            /* ── Success view ── */
             <motion.div
-              key="success-view"
+              key="success"
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.5, type: "spring", bounce: 0.4 }}
-              className="bg-card/80 backdrop-blur-2xl rounded-[2rem] shadow-2xl shadow-black/5 border border-white/50 p-8 sm:p-12 text-center"
+              className="bg-card/80 backdrop-blur-2xl rounded-[2rem] shadow-2xl border border-white/50 p-8 sm:p-12 text-center"
             >
               <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
-                <img src={`${import.meta.env.BASE_URL}images/success-calendar.png`} alt="Request Sent" className="w-40 h-40 mx-auto mb-8 drop-shadow-2xl" />
+                <img
+                  src={`${import.meta.env.BASE_URL}images/success-calendar.png`}
+                  alt="Request Sent"
+                  className="w-36 h-36 mx-auto mb-6 drop-shadow-2xl"
+                />
               </motion.div>
 
-              <motion.h2 initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }} className="text-4xl font-display font-bold text-foreground mb-4">
+              <motion.h2
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.3 }}
+                className="text-4xl font-display font-bold text-foreground mb-3"
+              >
                 Request Sent!
               </motion.h2>
 
-              <motion.p initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }} className="text-lg text-muted-foreground mb-8">
-                Thanks, <span className="font-semibold text-foreground">{confirmedBooking.name}</span>! Your preferences have been recorded.
+              <motion.p
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.4 }}
+                className="text-lg text-muted-foreground mb-8"
+              >
+                Thanks, <span className="font-semibold text-foreground">{confirmedBooking.name}</span>!
+                Your preferences have been recorded.
               </motion.p>
 
-              <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5 }} className="bg-white rounded-2xl p-6 shadow-sm border border-border/50 text-left max-w-sm mx-auto space-y-4">
-                <div className="border-b border-border/50 pb-4">
-                  <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold mb-2">Your Time Preferences</div>
-                  <div className="space-y-2">
-                    {[
-                      { p: confirmedBooking.priority1, meta: PRIORITY_META[0] },
-                      { p: confirmedBooking.priority2, meta: PRIORITY_META[1] },
-                      { p: confirmedBooking.priority3, meta: PRIORITY_META[2] },
-                    ].map(({ p, meta }, i) => (
-                      <div key={i} className="flex items-center gap-2 text-sm">
-                        <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0", meta.badge)}>
-                          {i + 1}
-                        </span>
-                        <span className="font-semibold text-foreground">{fmtPriority(p, availableSlots)}</span>
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.5 }}
+                className="bg-white rounded-2xl p-5 shadow-sm border border-border/50 text-left max-w-sm mx-auto space-y-3"
+              >
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Your Preferences</p>
+                {choices.map((c, i) => {
+                  const slot = availableSlots.find(s => s.id === c.slotId);
+                  const dur = getEffectiveDuration(c);
+                  const endStr = c.start && dur ? fromMins(toMins(c.start) + dur) : null;
+                  return (
+                    <div key={i} className="flex items-center gap-2.5 text-sm">
+                      <span className={cn("text-xs font-bold px-2 py-0.5 rounded-md border shrink-0", PRIORITY_COLORS[i])}>
+                        {PRIORITY_LABELS[i]}
+                      </span>
+                      <div>
+                        <div className="font-semibold text-foreground">{slot?.label ?? "—"}</div>
+                        {c.start && endStr && (
+                          <div className="text-xs text-muted-foreground">{fmt12(c.start)} – {fmt12(endStr)}</div>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    </div>
+                  );
+                })}
               </motion.div>
 
-              <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.7 }} className="mt-10">
-                <Button variant="outline" onClick={() => { setConfirmedBooking(null); form.reset(); }}>
-                  Submit Another Request
-                </Button>
-              </motion.div>
+              <motion.p
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.6 }}
+                className="mt-6 text-sm text-muted-foreground"
+              >
+                The teacher will review your preferences and confirm a time.
+              </motion.p>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
-
     </div>
   );
 }
