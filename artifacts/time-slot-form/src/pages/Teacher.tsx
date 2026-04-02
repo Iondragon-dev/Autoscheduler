@@ -21,6 +21,16 @@ import { signOutTeacher } from "./TeacherGate";
 import { fmt12, fmtPriority, toMins, fromMins } from "@/lib/booking-utils";
 import JSZip from "jszip";
 
+async function adminFetch(url: string, options?: RequestInit): Promise<Response> {
+  const res = await fetch(url, { credentials: "include", ...options });
+  if (res.status === 401) {
+    signOutTeacher();
+    window.location.reload();
+    throw new Error("Session expired. Please log in again.");
+  }
+  return res;
+}
+
 interface NewSlotForm { label: string; startTime: string; endTime: string; }
 interface ParsedSlot { label: string; startTime: string; endTime: string; }
 interface ParsedSlotWithDate extends ParsedSlot { dateKey: string; dateLabel: string; weekKey: string; weekLabel: string; }
@@ -59,7 +69,7 @@ function ChangePasscodeDialog({ open, onClose }: { open: boolean; onClose: () =>
     if (next !== confirm) { setError("New passcodes don't match."); return; }
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/teacher/passcode", {
+      const res = await adminFetch("/api/auth/teacher/passcode", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPasscode: current, newPasscode: next }),
@@ -531,7 +541,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
     setApplyingEdits(true);
     for (const op of pendingEdits) {
       if (op.op === "create") {
-        await fetch("/api/timeslots", {
+        await adminFetch("/api/timeslots", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ label: op.label, startTime: op.startTime, endTime: op.endTime }),
@@ -542,13 +552,13 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
         if (updates.label) body.label = updates.label;
         if (updates.startTime) body.startTime = updates.startTime;
         if (updates.endTime) body.endTime = updates.endTime;
-        await fetch(`/api/timeslots/${slotId}`, {
+        await adminFetch(`/api/timeslots/${slotId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
       } else if (op.op === "delete") {
-        await fetch(`/api/timeslots/${op.slotId}`, { method: "DELETE" });
+        await adminFetch(`/api/timeslots/${op.slotId}`, { method: "DELETE" });
       }
     }
     setApplyingEdits(false);
@@ -585,7 +595,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
     for (const block of pendingBlocks) {
       const existing = slots.find((s) => s.id === block.slotId)?.blockedTimes ?? [];
       const fullList = [...existing, ...block.ranges];
-      await fetch(`/api/timeslots/${block.slotId}/blocked-times`, {
+      await adminFetch(`/api/timeslots/${block.slotId}/blocked-times`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ranges: fullList }),
@@ -633,7 +643,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
     setAiMessage("");
 
     try {
-      const res = await fetch("/api/ai/schedule", {
+      const res = await adminFetch("/api/ai/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: [{ role: "user", content: userMessage }] }),
@@ -1773,12 +1783,16 @@ export default function Teacher() {
         refetchSlots();
         refetchBookings();
       },
+      onError: (err: unknown) => {
+        const status = (err as { status?: number })?.status;
+        if (status === 401) { signOutTeacher(); window.location.reload(); }
+      },
     });
   };
 
   const handleDeleteAll = async () => {
     setDeletingAll(true);
-    await fetch(`${import.meta.env.BASE_URL}api/timeslots`, { method: "DELETE" });
+    await adminFetch(`${import.meta.env.BASE_URL}api/timeslots`, { method: "DELETE" });
     setDeletingAll(false);
     setDeleteAllConfirm(false);
     setExpandedSlotId(null);
@@ -1788,7 +1802,7 @@ export default function Teacher() {
 
   const handleClearBookings = async () => {
     setClearingBookings(true);
-    await fetch(`${import.meta.env.BASE_URL}api/bookings`, { method: "DELETE" });
+    await adminFetch(`${import.meta.env.BASE_URL}api/bookings`, { method: "DELETE" });
     setClearingBookings(false);
     setClearBookingsConfirm(false);
     refetchBookings();
@@ -1806,7 +1820,7 @@ export default function Teacher() {
     const slot = (slots ?? []).find((s) => s.id === slotId);
     if (!slot) return;
     const newList = (slot.blockedTimes ?? []).filter((_, i) => i !== removeIdx);
-    await fetch(`/api/timeslots/${slotId}/blocked-times`, {
+    await adminFetch(`/api/timeslots/${slotId}/blocked-times`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ranges: newList }),
@@ -2136,7 +2150,7 @@ export default function Teacher() {
                       setIsScheduling(true);
                       setScheduleApplied(false);
                       try {
-                        const res = await fetch(`${import.meta.env.BASE_URL}api/bookings/auto-schedule`, {
+                        const res = await adminFetch(`${import.meta.env.BASE_URL}api/bookings/auto-schedule`, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ apply: false }),
@@ -2234,7 +2248,7 @@ export default function Teacher() {
                         onClick={async () => {
                           setIsApplyingSchedule(true);
                           try {
-                            await fetch(`${import.meta.env.BASE_URL}api/bookings/auto-schedule`, {
+                            await adminFetch(`${import.meta.env.BASE_URL}api/bookings/auto-schedule`, {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
                               body: JSON.stringify({ apply: true }),
@@ -2259,7 +2273,7 @@ export default function Teacher() {
                             onClick={async () => {
                               setIsClearingSchedule(true);
                               try {
-                                await fetch(`${import.meta.env.BASE_URL}api/bookings/schedule`, { method: "DELETE" });
+                                await adminFetch(`${import.meta.env.BASE_URL}api/bookings/schedule`, { method: "DELETE" });
                                 setSchedulePreview(null);
                                 setScheduleSummary(null);
                                 setScheduleApplied(false);

@@ -2,16 +2,14 @@ import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
 import { db, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { randomUUID } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 const router = Router();
 
 const PASSCODE_KEY = "teacher_passcode";
-const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
-
-const sessions = new Map<string, { createdAt: number }>();
-
 const DEFAULT_PASSCODE = process.env.TEACHER_PASSCODE ?? "teacher123";
+const SESSION_SECRET = process.env.SESSION_SECRET ?? "timeslot-teacher-session-v1";
+const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 async function getStoredPasscode(): Promise<string> {
   const row = await db
@@ -22,26 +20,28 @@ async function getStoredPasscode(): Promise<string> {
   return row[0]?.value ?? DEFAULT_PASSCODE;
 }
 
-function createSession(): string {
-  const token = randomUUID();
-  sessions.set(token, { createdAt: Date.now() });
-  return token;
+function signPasscode(passcode: string): string {
+  return createHmac("sha256", SESSION_SECRET).update(passcode).digest("hex");
 }
 
-function isValidSession(token: string): boolean {
-  const session = sessions.get(token);
-  if (!session) return false;
-  if (Date.now() - session.createdAt > SESSION_DURATION_MS) {
-    sessions.delete(token);
+function verifyCookie(token: string, currentPasscode: string): boolean {
+  const expected = signPasscode(currentPasscode);
+  try {
+    return timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(expected, "hex"));
+  } catch {
     return false;
   }
-  return true;
 }
 
-export function requireTeacherSession(req: Request, res: Response, next: NextFunction): void {
+export async function requireTeacherSession(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = req.cookies["teacher_session"] as string | undefined;
-  if (!token || !isValidSession(token)) {
+  if (!token) {
     res.status(401).json({ message: "Unauthorized. Please log in to the teacher area." });
+    return;
+  }
+  const passcode = await getStoredPasscode();
+  if (!verifyCookie(token, passcode)) {
+    res.status(401).json({ message: "Session expired. Please log in again." });
     return;
   }
   next();
@@ -58,26 +58,29 @@ router.post("/auth/teacher", async (req, res) => {
     res.status(401).json({ message: "Incorrect passcode." });
     return;
   }
-  const token = createSession();
+  const token = signPasscode(passcode);
   res.cookie("teacher_session", token, {
     httpOnly: true,
     sameSite: "lax",
-    maxAge: SESSION_DURATION_MS,
+    maxAge: COOKIE_MAX_AGE_MS,
     path: "/",
   });
   res.json({ ok: true });
 });
 
-router.post("/auth/teacher/logout", (req, res) => {
-  const token = req.cookies["teacher_session"] as string | undefined;
-  if (token) sessions.delete(token);
+router.post("/auth/teacher/logout", (_req, res) => {
   res.clearCookie("teacher_session", { path: "/" });
   res.json({ ok: true });
 });
 
 router.put("/auth/teacher/passcode", async (req, res) => {
   const token = req.cookies["teacher_session"] as string | undefined;
-  if (!token || !isValidSession(token)) {
+  if (!token) {
+    res.status(401).json({ message: "Unauthorized." });
+    return;
+  }
+  const expected = await getStoredPasscode();
+  if (!verifyCookie(token, expected)) {
     res.status(401).json({ message: "Unauthorized." });
     return;
   }
@@ -91,8 +94,6 @@ router.put("/auth/teacher/passcode", async (req, res) => {
     res.status(400).json({ message: "New passcode must be at least 4 characters." });
     return;
   }
-
-  const expected = await getStoredPasscode();
   if (currentPasscode !== expected) {
     res.status(401).json({ message: "Current passcode is incorrect." });
     return;
@@ -103,6 +104,13 @@ router.put("/auth/teacher/passcode", async (req, res) => {
     .values({ key: PASSCODE_KEY, value: newPasscode })
     .onConflictDoUpdate({ target: settingsTable.key, set: { value: newPasscode } });
 
+  const newToken = signPasscode(newPasscode);
+  res.cookie("teacher_session", newToken, {
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: COOKIE_MAX_AGE_MS,
+    path: "/",
+  });
   res.json({ ok: true });
 });
 

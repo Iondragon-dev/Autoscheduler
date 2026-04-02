@@ -10,6 +10,7 @@ export const SESSION_KEY = "teacherAuth";
 async function verifyPasscode(passcode: string): Promise<boolean> {
   const res = await fetch("/api/auth/teacher", {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ passcode }),
   });
