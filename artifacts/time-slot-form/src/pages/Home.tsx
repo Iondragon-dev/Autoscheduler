@@ -121,11 +121,19 @@ export default function Home() {
               transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
               className="bg-card/80 backdrop-blur-2xl rounded-[2rem] shadow-2xl shadow-black/5 border border-white/50 p-6 sm:p-10"
             >
-              <div className="mb-10 text-center">
-                <h1 className="text-4xl font-display font-bold text-foreground mb-3">Book a Session</h1>
-                <p className="text-lg text-muted-foreground">
-                  Pick 3 preferred times from any available day, then submit your details.
-                </p>
+              <div className="mb-12 text-center space-y-6">
+                <div>
+                  <p className="text-sm font-semibold text-primary/70 uppercase tracking-widest mb-2">Welcome to Session Booking</p>
+                  <h1 className="text-4xl font-display font-bold text-foreground mb-3">Book a Session</h1>
+                  <p className="text-lg text-muted-foreground">
+                    Pick 3 preferred times from any available day, then submit your details.
+                  </p>
+                </div>
+                <div className="inline-block rounded-xl bg-primary/5 border border-primary/20 px-4 py-3">
+                  <p className="text-sm text-foreground font-medium">
+                    We'll assign you to one of your preferences based on availability.
+                  </p>
+                </div>
               </div>
 
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-10">
