@@ -1,4 +1,5 @@
-import { Router, type Request, type Response, type NextFunction } from "express";
+import { Router } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { db, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -6,18 +7,24 @@ import { randomUUID } from "crypto";
 const router = Router();
 
 const PASSCODE_KEY = "teacher_passcode";
-const DEFAULT_PASSCODE = process.env.TEACHER_PASSCODE ?? "teacher123";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 const sessions = new Map<string, { createdAt: number }>();
 
-async function getStoredPasscode(): Promise<string> {
+function getEnvPasscode(): string | undefined {
+  return process.env.TEACHER_PASSCODE;
+}
+
+async function getStoredPasscode(): Promise<string | null> {
   const row = await db
     .select()
     .from(settingsTable)
     .where(eq(settingsTable.key, PASSCODE_KEY))
     .limit(1);
-  return row[0]?.value ?? DEFAULT_PASSCODE;
+  if (row[0]?.value) return row[0].value;
+  const env = getEnvPasscode();
+  if (env) return env;
+  return null;
 }
 
 function createSession(): string {
@@ -37,7 +44,7 @@ function isValidSession(token: string): boolean {
 }
 
 export function requireTeacherSession(req: Request, res: Response, next: NextFunction): void {
-  const token = (req as any).cookies?.teacher_session as string | undefined;
+  const token = req.cookies["teacher_session"] as string | undefined;
   if (!token || !isValidSession(token)) {
     res.status(401).json({ message: "Unauthorized. Please log in to the teacher area." });
     return;
@@ -52,6 +59,10 @@ router.post("/auth/teacher", async (req, res) => {
     return;
   }
   const expected = await getStoredPasscode();
+  if (!expected) {
+    res.status(503).json({ message: "Teacher passcode not configured. Set the TEACHER_PASSCODE environment variable." });
+    return;
+  }
   if (passcode !== expected) {
     res.status(401).json({ message: "Incorrect passcode." });
     return;
@@ -67,14 +78,14 @@ router.post("/auth/teacher", async (req, res) => {
 });
 
 router.post("/auth/teacher/logout", (req, res) => {
-  const token = (req as any).cookies?.teacher_session as string | undefined;
+  const token = req.cookies["teacher_session"] as string | undefined;
   if (token) sessions.delete(token);
   res.clearCookie("teacher_session", { path: "/" });
   res.json({ ok: true });
 });
 
 router.put("/auth/teacher/passcode", async (req, res) => {
-  const token = (req as any).cookies?.teacher_session as string | undefined;
+  const token = req.cookies["teacher_session"] as string | undefined;
   if (!token || !isValidSession(token)) {
     res.status(401).json({ message: "Unauthorized." });
     return;
@@ -91,6 +102,10 @@ router.put("/auth/teacher/passcode", async (req, res) => {
   }
 
   const expected = await getStoredPasscode();
+  if (!expected) {
+    res.status(503).json({ message: "Teacher passcode not configured." });
+    return;
+  }
   if (currentPasscode !== expected) {
     res.status(401).json({ message: "Current passcode is incorrect." });
     return;
