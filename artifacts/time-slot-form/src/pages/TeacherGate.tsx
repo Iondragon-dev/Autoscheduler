@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, AlertCircle, ArrowRight, Eye, EyeOff, RotateCcw } from "lucide-react";
+import { Lock, AlertCircle, ArrowRight, Eye, EyeOff, Info } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -16,11 +16,6 @@ async function verifyPasscode(passcode: string): Promise<boolean> {
   return res.ok;
 }
 
-const DEFAULT_PASSCODE_HINT = "teacher123";
-
-async function resetPasscode(): Promise<void> {
-  await fetch("/api/auth/teacher/passcode/reset", { method: "POST" });
-}
 
 /** Call this to immediately sign out of the teacher area. */
 export function signOutTeacher() {
@@ -37,9 +32,7 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
   const [error, setError] = useState("");
   const [shake, setShake] = useState(false);
 
-  const [showReset, setShowReset] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [resetDone, setResetDone] = useState<string | null>(null);
+  const [showRecovery, setShowRecovery] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -61,15 +54,6 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
     }
   }
 
-  async function handleReset() {
-    setResetting(true);
-    await resetPasscode();
-    setResetting(false);
-    setResetDone(DEFAULT_PASSCODE_HINT);
-    setShowReset(false);
-    setPasscode(DEFAULT_PASSCODE_HINT);
-    setError("");
-  }
 
   if (authed) return <>{children}</>;
 
@@ -129,20 +113,6 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
               )}
             </AnimatePresence>
 
-            <AnimatePresence>
-              {resetDone && (
-                <motion.p
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="text-sm font-medium text-green-600 flex items-center gap-1.5"
-                >
-                  <RotateCcw className="w-4 h-4 shrink-0" />
-                  Passcode reset to <span className="font-mono font-bold">{resetDone}</span>. You can log in now.
-                </motion.p>
-              )}
-            </AnimatePresence>
-
             <Button type="submit" className="w-full" isLoading={loading}>
               Enter
               <ArrowRight className="w-4 h-4 ml-2" />
@@ -152,46 +122,40 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
           {/* Forgot passcode */}
           <div className="mt-5">
             <AnimatePresence mode="wait">
-              {!showReset ? (
+              {!showRecovery ? (
                 <motion.button
                   key="link"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   type="button"
-                  onClick={() => setShowReset(true)}
+                  onClick={() => setShowRecovery(true)}
                   className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
                 >
                   Forgot passcode?
                 </motion.button>
               ) : (
                 <motion.div
-                  key="confirm"
+                  key="info"
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -6 }}
-                  className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-left space-y-3"
+                  className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-left space-y-2"
                 >
-                  <p className="text-xs text-amber-800 font-medium">
-                    This will reset your passcode back to the default. You can then log in and set a new one.
+                  <p className="text-xs font-semibold text-blue-800 flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 shrink-0" />Passcode Recovery
                   </p>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      className="flex-1 text-xs h-8"
-                      onClick={() => setShowReset(false)}
-                      disabled={resetting}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      className="flex-1 text-xs h-8 bg-amber-500 hover:bg-amber-600 text-white border-0"
-                      onClick={handleReset}
-                      isLoading={resetting}
-                    >
-                      Reset passcode
-                    </Button>
-                  </div>
+                  <p className="text-xs text-blue-700">
+                    Set the <span className="font-mono font-bold">TEACHER_PASSCODE</span> environment variable
+                    to your desired passcode and restart the app — it will become the new passcode automatically.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowRecovery(false)}
+                    className="text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2"
+                  >
+                    Dismiss
+                  </button>
                 </motion.div>
               )}
             </AnimatePresence>
