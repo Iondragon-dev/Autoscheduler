@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { requireTeacherSession } from "./auth";
 
 const router: IRouter = Router();
 
@@ -79,7 +80,7 @@ async function streamAi(
   res.end();
 }
 
-router.post("/ai/schedule", async (req, res) => {
+router.post("/ai/schedule", requireTeacherSession, async (req, res) => {
   const { messages } = req.body as { messages: { role: string; content: string }[] };
   if (!Array.isArray(messages)) { res.status(400).json({ message: "messages must be an array" }); return; }
   await streamAi(CREATE_SYSTEM_PROMPT, messages, res);
@@ -112,7 +113,7 @@ Rules for the JSON:
 
 After the EDIT_SLOTS block, add one short friendly closing sentence.`;
 
-router.post("/ai/edit", async (req, res) => {
+router.post("/ai/edit", requireTeacherSession, async (req, res) => {
   const { messages, slots } = req.body as {
     messages: { role: string; content: string }[];
     slots: Array<{ id: number; label: string; startTime: string; endTime: string }>;
@@ -132,7 +133,7 @@ router.post("/ai/edit", async (req, res) => {
   await streamAi(EDIT_SYSTEM_PROMPT, messagesWithContext, res);
 });
 
-router.post("/ai/block", async (req, res) => {
+router.post("/ai/block", requireTeacherSession, async (req, res) => {
   const { messages, slots } = req.body as {
     messages: { role: string; content: string }[];
     slots: Array<{ id: number; label: string; startTime: string; endTime: string }>;

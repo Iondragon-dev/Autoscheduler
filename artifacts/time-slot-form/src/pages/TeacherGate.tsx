@@ -20,6 +20,7 @@ async function verifyPasscode(passcode: string): Promise<boolean> {
 /** Call this to immediately sign out of the teacher area. */
 export function signOutTeacher() {
   sessionStorage.removeItem(SESSION_KEY);
+  fetch("/api/auth/teacher/logout", { method: "POST" }).catch(() => {});
 }
 
 export default function TeacherGate({ children }: { children: ReactNode }) {

@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, timeSlotsTable, bookingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { CreateBookingBody, CreateTimeSlotBody, UpdateTimeSlotBody } from "@workspace/api-zod";
+import { requireTeacherSession } from "./auth";
 
 const router: IRouter = Router();
 
@@ -21,7 +22,7 @@ router.get("/timeslots", async (_req, res) => {
   res.json(slots.map(serializeSlot));
 });
 
-router.post("/timeslots", async (req, res) => {
+router.post("/timeslots", requireTeacherSession, async (req, res) => {
   const parsed = CreateTimeSlotBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ message: "Invalid request body" });
@@ -33,7 +34,7 @@ router.post("/timeslots", async (req, res) => {
   res.status(201).json(serializeSlot(slot));
 });
 
-router.patch("/timeslots/:id", async (req, res) => {
+router.patch("/timeslots/:id", requireTeacherSession, async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ message: "Invalid id" });
@@ -57,7 +58,7 @@ router.patch("/timeslots/:id", async (req, res) => {
   res.json(serializeSlot(updated));
 });
 
-router.patch("/timeslots/:id/blocked-times", async (req, res) => {
+router.patch("/timeslots/:id/blocked-times", requireTeacherSession, async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ message: "Invalid id" }); return; }
 
@@ -71,18 +72,18 @@ router.patch("/timeslots/:id/blocked-times", async (req, res) => {
   res.json(serializeSlot(updated));
 });
 
-router.delete("/bookings", async (_req, res) => {
+router.delete("/bookings", requireTeacherSession, async (_req, res) => {
   await db.delete(bookingsTable);
   res.json({ message: "All bookings cleared" });
 });
 
-router.delete("/timeslots", async (_req, res) => {
+router.delete("/timeslots", requireTeacherSession, async (_req, res) => {
   await db.delete(bookingsTable);
   await db.delete(timeSlotsTable);
   res.json({ message: "All slots and bookings deleted" });
 });
 
-router.delete("/timeslots/:id", async (req, res) => {
+router.delete("/timeslots/:id", requireTeacherSession, async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ message: "Invalid id" });
@@ -100,7 +101,7 @@ router.delete("/timeslots/:id", async (req, res) => {
   res.json({ message: "Deleted successfully" });
 });
 
-router.get("/bookings", async (_req, res) => {
+router.get("/bookings", requireTeacherSession, async (_req, res) => {
   const bookings = await db.select({
     id: bookingsTable.id,
     timeSlotId: bookingsTable.timeSlotId,
@@ -155,7 +156,7 @@ router.post("/bookings", async (req, res) => {
   });
 });
 
-router.post("/bookings/auto-schedule", async (req, res) => {
+router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) => {
   const apply = req.body?.apply === true;
 
   const allBookings = await db.select().from(bookingsTable).orderBy(bookingsTable.createdAt);
@@ -236,7 +237,7 @@ router.post("/bookings/auto-schedule", async (req, res) => {
   res.json({ results, summary });
 });
 
-router.delete("/bookings/schedule", async (_req, res) => {
+router.delete("/bookings/schedule", requireTeacherSession, async (_req, res) => {
   await db.update(bookingsTable).set({ assignedPriority: null, assignedTime: null });
   res.json({ ok: true });
 });
