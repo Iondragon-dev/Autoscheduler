@@ -11,20 +11,15 @@ const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 const sessions = new Map<string, { createdAt: number }>();
 
-function getEnvPasscode(): string | undefined {
-  return process.env.TEACHER_PASSCODE;
-}
+const DEFAULT_PASSCODE = process.env.TEACHER_PASSCODE ?? "teacher123";
 
-async function getStoredPasscode(): Promise<string | null> {
+async function getStoredPasscode(): Promise<string> {
   const row = await db
     .select()
     .from(settingsTable)
     .where(eq(settingsTable.key, PASSCODE_KEY))
     .limit(1);
-  if (row[0]?.value) return row[0].value;
-  const env = getEnvPasscode();
-  if (env) return env;
-  return null;
+  return row[0]?.value ?? DEFAULT_PASSCODE;
 }
 
 function createSession(): string {
@@ -59,10 +54,6 @@ router.post("/auth/teacher", async (req, res) => {
     return;
   }
   const expected = await getStoredPasscode();
-  if (!expected) {
-    res.status(503).json({ message: "Teacher passcode not configured. Set the TEACHER_PASSCODE environment variable." });
-    return;
-  }
   if (passcode !== expected) {
     res.status(401).json({ message: "Incorrect passcode." });
     return;
@@ -102,10 +93,6 @@ router.put("/auth/teacher/passcode", async (req, res) => {
   }
 
   const expected = await getStoredPasscode();
-  if (!expected) {
-    res.status(503).json({ message: "Teacher passcode not configured." });
-    return;
-  }
   if (currentPasscode !== expected) {
     res.status(401).json({ message: "Current passcode is incorrect." });
     return;
