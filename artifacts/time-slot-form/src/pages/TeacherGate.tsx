@@ -16,10 +16,10 @@ async function verifyPasscode(passcode: string): Promise<boolean> {
   return res.ok;
 }
 
-async function resetPasscode(): Promise<string> {
-  const res = await fetch("/api/auth/teacher/passcode/reset", { method: "POST" });
-  const data = await res.json();
-  return data.defaultPasscode as string;
+const DEFAULT_PASSCODE_HINT = "teacher123";
+
+async function resetPasscode(): Promise<void> {
+  await fetch("/api/auth/teacher/passcode/reset", { method: "POST" });
 }
 
 /** Call this to immediately sign out of the teacher area. */
@@ -63,11 +63,11 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
 
   async function handleReset() {
     setResetting(true);
-    const defaultCode = await resetPasscode();
+    await resetPasscode();
     setResetting(false);
-    setResetDone(defaultCode);
+    setResetDone(DEFAULT_PASSCODE_HINT);
     setShowReset(false);
-    setPasscode(defaultCode);
+    setPasscode(DEFAULT_PASSCODE_HINT);
     setError("");
   }
 
