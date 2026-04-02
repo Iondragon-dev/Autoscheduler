@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, AlertCircle, ArrowRight, Eye, EyeOff, Info } from "lucide-react";
+import { Lock, AlertCircle, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -33,8 +33,6 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [shake, setShake] = useState(false);
-
-  const [showRecovery, setShowRecovery] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -120,48 +118,6 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </form>
-
-          {/* Forgot passcode */}
-          <div className="mt-5">
-            <AnimatePresence mode="wait">
-              {!showRecovery ? (
-                <motion.button
-                  key="link"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  type="button"
-                  onClick={() => setShowRecovery(true)}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
-                >
-                  Forgot passcode?
-                </motion.button>
-              ) : (
-                <motion.div
-                  key="info"
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-left space-y-2"
-                >
-                  <p className="text-xs font-semibold text-blue-800 flex items-center gap-1.5">
-                    <Info className="w-3.5 h-3.5 shrink-0" />Passcode Recovery
-                  </p>
-                  <p className="text-xs text-blue-700">
-                    Set the <span className="font-mono font-bold">TEACHER_PASSCODE</span> environment variable
-                    to your desired passcode and restart the app — it will become the new passcode automatically.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowRecovery(false)}
-                    className="text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2"
-                  >
-                    Dismiss
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
         </motion.div>
 
         <div className="text-center mt-5">
