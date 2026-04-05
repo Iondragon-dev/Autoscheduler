@@ -2318,7 +2318,7 @@ export default function Teacher() {
 
                 {(bookings?.length ?? 0) === 0 && (
                   <div className="text-center py-8 text-muted-foreground text-sm border border-dashed border-border rounded-xl">
-                    No student bookings yet. Students need to submit their preferences first.
+                    {scheduleApplied ? "No appointments yet." : "No student bookings yet. Students need to submit their preferences first."}
                   </div>
                 )}
 
