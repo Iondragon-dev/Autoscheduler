@@ -561,6 +561,7 @@ export default function Home() {
                               value={name}
                               onChange={e => { setName(e.target.value); setDetailsErrors(p => ({ ...p, name: undefined })); }}
                               placeholder="Jane Doe"
+                              maxLength={40}
                               error={!!detailsErrors.name}
                             />
                             {detailsErrors.name && (
@@ -579,6 +580,7 @@ export default function Home() {
                               value={email}
                               onChange={e => { setEmail(e.target.value); setDetailsErrors(p => ({ ...p, email: undefined })); }}
                               placeholder="jane@example.com"
+                              maxLength={40}
                               error={!!detailsErrors.email}
                             />
                             {detailsErrors.email && (
