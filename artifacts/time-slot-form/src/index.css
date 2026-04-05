@@ -42,7 +42,7 @@
 
 @layer base {
   body {
-    @apply bg-background text-foreground antialiased font-sans min-h-screen selection:bg-primary/20 selection:text-primary;
+    @apply bg-background text-foreground antialiased font-sans min-h-screen selection:bg-primary/80 selection:text-primary-foreground;
   }
 
   h1, h2, h3, h4, h5, h6 {
