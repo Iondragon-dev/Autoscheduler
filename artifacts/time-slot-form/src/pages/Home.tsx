@@ -19,6 +19,8 @@ type Choice = {
   isCustomDuration: boolean;
   customDurationStr: string;
   start: string | null;
+  isCustomTime: boolean;
+  customTimeStr: string;
 };
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -79,9 +81,9 @@ export default function Home() {
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
 
   const [choices, setChoices] = useState<Choice[]>([
-    { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null },
-    { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null },
-    { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null },
+    { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
+    { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
+    { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
   ]);
 
   const [name, setName] = useState("");
@@ -485,33 +487,77 @@ export default function Home() {
                               </span>
                             </div>
                           ) : (
-                            <div className="flex flex-wrap gap-2 max-h-72 overflow-y-auto pr-1">
-                              {times.map(t => {
-                              const endStr = fromMins(toMins(t) + dur!);
-                              const sel = c.start === t;
-                              const taken = alreadyPicked.has(t);
-                              return (
-                                <button
-                                  key={t}
-                                  type="button"
-                                  disabled={taken}
-                                  onClick={() => !taken && updateChoice(choiceIdx, { start: t })}
-                                  title={taken ? "Already chosen as another preference" : undefined}
-                                  className={cn(
-                                    "flex flex-col items-center px-3.5 py-2.5 rounded-xl border-2 transition-all",
-                                    taken
-                                      ? "border-border/30 bg-muted/40 text-muted-foreground/40 cursor-not-allowed line-through"
-                                      : sel
-                                        ? "border-primary bg-primary/10 text-primary"
-                                        : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 text-foreground",
-                                  )}
-                                >
-                                  <span className="text-sm font-bold">{fmt12(t)}</span>
-                                  <span className="text-[10px]">{taken ? "chosen" : `to ${fmt12(endStr)}`}</span>
-                                </button>
-                              );
-                            })}
-                            </div>
+                            <>
+                              <div className="flex flex-wrap gap-2 max-h-72 overflow-y-auto pr-1">
+                                {times.map(t => {
+                                const endStr = fromMins(toMins(t) + dur!);
+                                const sel = c.start === t;
+                                const taken = alreadyPicked.has(t);
+                                return (
+                                  <button
+                                    key={t}
+                                    type="button"
+                                    disabled={taken}
+                                    onClick={() => !taken && updateChoice(choiceIdx, { start: t })}
+                                    title={taken ? "Already chosen as another preference" : undefined}
+                                    className={cn(
+                                      "flex flex-col items-center px-3.5 py-2.5 rounded-xl border-2 transition-all",
+                                      taken
+                                        ? "border-border/30 bg-muted/40 text-muted-foreground/40 cursor-not-allowed line-through"
+                                        : sel
+                                          ? "border-primary bg-primary/10 text-primary"
+                                          : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 text-foreground",
+                                    )}
+                                  >
+                                    <span className="text-sm font-bold">{fmt12(t)}</span>
+                                    <span className="text-[10px]">{taken ? "chosen" : `to ${fmt12(endStr)}`}</span>
+                                  </button>
+                                );
+                              })}
+                              </div>
+
+                              <button
+                              type="button"
+                              onClick={() => updateChoice(choiceIdx, { isCustomTime: true, start: null })}
+                              className={cn(
+                                "w-full py-2.5 rounded-xl border-2 text-sm font-semibold transition-all",
+                                c.isCustomTime
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 text-foreground",
+                              )}
+                            >
+                              Other (enter time)
+                            </button>
+
+                            {c.isCustomTime && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                className="space-y-1"
+                              >
+                                <label className="text-sm font-medium text-foreground">
+                                  Start time (HH:MM)
+                                </label>
+                                <input
+                                  type="time"
+                                  value={c.customTimeStr}
+                                  onChange={e => updateChoice(choiceIdx, { customTimeStr: e.target.value })}
+                                  className="w-full text-sm bg-background border border-border rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
+                                  autoFocus
+                                />
+                              </motion.div>
+                            )}
+
+                          {c.isCustomTime && c.customTimeStr && (
+                            <button
+                              type="button"
+                              onClick={() => updateChoice(choiceIdx, { start: c.customTimeStr })}
+                              className="w-full py-2.5 rounded-xl border-2 border-primary bg-primary/10 text-primary text-sm font-semibold transition-all hover:bg-primary/20"
+                            >
+                              Confirm: {fmt12(c.customTimeStr)}
+                            </button>
+                          )}
+                            </>
                           )}
                         </>
                       );
