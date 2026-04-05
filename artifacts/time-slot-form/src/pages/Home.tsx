@@ -132,7 +132,7 @@ export default function Home() {
     if (subPage === 0) return c.slotId !== null;
     if (subPage === 1) {
       const d = getEffectiveDuration(c);
-      if (d === null || d <= 0 || d > 480) return false;
+      if (d === null || d <= 0 || d > (slotWindowMins ?? 480)) return false;
       if (slotWindowMins !== null && d > slotWindowMins) return false;
       return true;
     }
@@ -421,7 +421,7 @@ export default function Home() {
                               <input
                                 type="number"
                                 min={1}
-                                max={480}
+                                max={slotWindowMins ?? 480}
                                 value={c.customDurationStr}
                                 onChange={e => updateChoice(choiceIdx, { customDurationStr: e.target.value, start: null })}
                                 placeholder="e.g. 25"
