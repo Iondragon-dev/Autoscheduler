@@ -419,8 +419,9 @@ export default function Home() {
                               </span>
                             </div>
                           ) : (
-                            <div className="flex flex-wrap gap-2 max-h-72 overflow-y-auto pr-1">
-                              {times.map(t => {
+                            <div className="relative">
+                              <div className="flex flex-wrap gap-2 max-h-72 overflow-y-auto pr-1">
+                                {times.map(t => {
                                 const endStr = fromMins(toMins(t) + dur!);
                                 const sel = c.start === t;
                                 return (
@@ -440,6 +441,18 @@ export default function Home() {
                                   </button>
                                 );
                               })}
+                            </div>
+                              <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-background via-background/60 to-transparent pointer-events-none flex items-end justify-center pb-2">
+                                <motion.div
+                                  animate={{ y: [0, 6, 0] }}
+                                  transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+                                  className="text-muted-foreground"
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                                  </svg>
+                                </motion.div>
+                              </div>
                             </div>
                           )}
                         </>
