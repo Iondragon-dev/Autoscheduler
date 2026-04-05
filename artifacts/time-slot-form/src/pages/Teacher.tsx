@@ -31,7 +31,7 @@ async function adminFetch(url: string, options?: RequestInit): Promise<Response>
   return res;
 }
 
-interface NewSlotForm { date: string; startTime: string; endTime: string; }
+interface NewSlotForm { day: string; startTime: string; endTime: string; }
 interface ParsedSlot { label: string; startTime: string; endTime: string; }
 interface ParsedSlotWithDate extends ParsedSlot { dateKey: string; dateLabel: string; weekKey: string; weekLabel: string; }
 
@@ -1741,7 +1741,7 @@ export default function Teacher() {
   const [clearBookingsConfirm, setClearBookingsConfirm] = useState(false);
   const [clearingBookings, setClearingBookings] = useState(false);
   const [expandedSlotId, setExpandedSlotId] = useState<number | null>(null);
-  const [form, setForm] = useState<NewSlotForm>({ date: "", startTime: "", endTime: "" });
+  const [form, setForm] = useState<NewSlotForm>({ day: "", startTime: "", endTime: "" });
   const [formError, setFormError] = useState<string | null>(null);
   const [showPasscodeDialog, setShowPasscodeDialog] = useState(false);
 
@@ -1760,7 +1760,7 @@ export default function Teacher() {
   const [isClearingSchedule, setIsClearingSchedule] = useState(false);
 
   const handleAddSlot = () => {
-    if (!form.date || !form.startTime || !form.endTime) {
+    if (!form.day || !form.startTime || !form.endTime) {
       setFormError("Please fill in all fields.");
       return;
     }
@@ -1769,13 +1769,10 @@ export default function Teacher() {
       return;
     }
     setFormError(null);
-    const d = new Date(form.date + "T00:00:00");
-    const dayName = d.toLocaleDateString("en-US", { weekday: "long" });
-    const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    const autoLabel = `${dayName}, ${dateStr} · ${fmt12(form.startTime)} – ${fmt12(form.endTime)}`;
+    const autoLabel = `${form.day} ${fmt12(form.startTime)} – ${fmt12(form.endTime)}`;
     createSlot.mutate(
       { data: { label: autoLabel, startTime: form.startTime, endTime: form.endTime } },
-      { onSuccess: () => { setForm({ date: "", startTime: "", endTime: "" }); setShowAddForm(false); refetchSlots(); } }
+      { onSuccess: () => { setForm({ day: "", startTime: "", endTime: "" }); setShowAddForm(false); refetchSlots(); } }
     );
   };
 
@@ -1976,8 +1973,15 @@ export default function Teacher() {
                       <div className="bg-muted/30 rounded-xl p-4 mb-4 border border-border space-y-3">
                         <p className="text-sm font-semibold text-foreground mb-2">New Time Slot</p>
                         <div>
-                          <label className="block text-xs text-muted-foreground mb-1 font-medium">Date</label>
-                          <Input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} />
+                          <label className="block text-xs text-muted-foreground mb-1 font-medium">Day of Week</label>
+                          <select
+                            value={form.day}
+                            onChange={(e) => setForm((f) => ({ ...f, day: e.target.value }))}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                          >
+                            <option value="">Select a day…</option>
+                            {ALL_DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+                          </select>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
