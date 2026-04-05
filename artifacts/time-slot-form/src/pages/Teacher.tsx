@@ -1584,14 +1584,15 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
 
 // ── Weekly Calendar ──────────────────────────────────────────────────────────
 function WeeklyCalendar() {
-  const { data: slots } = useGetTimeSlots();
+  const { data: slots, refetch: refetchSlots } = useGetTimeSlots();
   const { data: bookings } = useGetBookings();
-  const [expandedSlotId, setExpandedSlotId] = useState<number | null>(null);
+  const createSlot = useCreateTimeSlot();
 
-  const slotsByDay = ALL_DAYS.map((day) => ({
-    day,
-    slots: (slots ?? []).filter((s) => dayOfSlot(s.label) === day),
-  }));
+  const [expandedSlotId, setExpandedSlotId] = useState<number | null>(null);
+  const [addingDay, setAddingDay] = useState<string | null>(null);
+  const [addStart, setAddStart] = useState("");
+  const [addEnd, setAddEnd] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
 
   const priorityMatchesSlot = (p: string | null | undefined, slotId: number) =>
     !!p && p.includes("|") && Number(p.split("|")[0]) === slotId;
@@ -1601,125 +1602,201 @@ function WeeklyCalendar() {
       [b.priority1, b.priority2, b.priority3].some((p) => priorityMatchesSlot(p, slotId))
     );
 
-  const hasAnySlots = (slots ?? []).length > 0;
+  const openAddForm = (day: string) => {
+    setAddingDay(day);
+    setAddStart("");
+    setAddEnd("");
+    setAddError(null);
+  };
+
+  const closeAddForm = () => {
+    setAddingDay(null);
+    setAddError(null);
+  };
+
+  const handleAdd = (day: string) => {
+    if (!addStart || !addEnd) { setAddError("Please fill in both times."); return; }
+    if (toMins(addStart) >= toMins(addEnd)) { setAddError("Start must be before end."); return; }
+    setAddError(null);
+    const autoLabel = `${day} ${fmt12(addStart)} – ${fmt12(addEnd)}`;
+    createSlot.mutate(
+      { data: { label: autoLabel, startTime: addStart, endTime: addEnd } },
+      { onSuccess: () => { closeAddForm(); refetchSlots(); } }
+    );
+  };
 
   return (
-    <div>
-      {!hasAnySlots ? (
-        <div className="py-12 text-center text-muted-foreground border-2 border-dashed border-border rounded-xl">
-          <Bot className="w-8 h-8 mx-auto mb-3 opacity-40" />
-          <p className="font-medium">No schedule yet</p>
-          <p className="text-sm mt-1">Use the AI assistant to set up your weekly availability.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {slotsByDay.map(({ day, slots: daySlots }) => {
-            const dayBookings = daySlots.flatMap((s) => bookingsForSlot(s.id));
-            return (
-              <div key={day} className={cn(
-                "rounded-xl border overflow-hidden",
-                daySlots.length > 0 ? "border-border bg-card" : "border-dashed border-border/50 bg-muted/20"
-              )}>
-                <div className="flex items-center justify-between px-4 py-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", daySlots.length > 0 ? "bg-primary" : "bg-muted-foreground/30")} />
-                    <span className="font-semibold text-sm text-foreground">{day}</span>
-                  </div>
-                  {daySlots.length > 0 ? (
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{daySlots.length} slot{daySlots.length !== 1 ? "s" : ""}</span>
-                      {dayBookings.length > 0 && (
-                        <span className="flex items-center gap-1 text-primary font-medium"><Users className="w-3 h-3" />{dayBookings.length} booked</span>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">Not available</span>
-                  )}
-                </div>
-
+    <div className="space-y-3">
+      {ALL_DAYS.map((day) => {
+        const daySlots = (slots ?? []).filter((s) => dayOfSlot(s.label) === day);
+        const dayBookings = daySlots.flatMap((s) => bookingsForSlot(s.id));
+        const isAdding = addingDay === day;
+        return (
+          <div key={day} className={cn(
+            "rounded-xl border overflow-hidden",
+            daySlots.length > 0 ? "border-border bg-card" : "border-dashed border-border/50 bg-muted/20"
+          )}>
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", daySlots.length > 0 ? "bg-primary" : "bg-muted-foreground/30")} />
+                <span className="font-semibold text-sm text-foreground">{day}</span>
+              </div>
+              <div className="flex items-center gap-3">
                 {daySlots.length > 0 && (
-                  <div className="px-4 pb-3 space-y-2">
-                    {daySlots.map((slot) => {
-                      const slotBookings = bookingsForSlot(slot.id);
-                      const isExpanded = expandedSlotId === slot.id;
-                      return (
-                        <div key={slot.id}>
-                          <button
-                            onClick={() => setExpandedSlotId(isExpanded ? null : slot.id)}
-                            disabled={slotBookings.length === 0}
-                            className={cn(
-                              "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs border transition-all",
-                              slot.available
-                                ? "bg-primary/5 border-primary/20 hover:bg-primary/10"
-                                : "bg-muted/40 border-border opacity-60",
-                              isExpanded && "bg-primary/10 border-primary/30",
-                              slotBookings.length === 0 && "cursor-default"
-                            )}
-                          >
-                            <div className="flex items-center gap-2">
-                              <Clock className="w-3 h-3 text-muted-foreground" />
-                              <span className="font-medium text-foreground">{slot.startTime} – {slot.endTime}</span>
-                              {!slot.available && <span className="text-muted-foreground">(unavailable)</span>}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {slotBookings.length > 0 && (
-                                <span className="flex items-center gap-1 text-primary font-semibold"><Users className="w-3 h-3" />{slotBookings.length}</span>
-                              )}
-                              {slotBookings.length > 0 && (
-                                <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground transition-transform", isExpanded && "rotate-180")} />
-                              )}
-                            </div>
-                          </button>
-                          <AnimatePresence>
-                            {isExpanded && slotBookings.length > 0 && (
-                              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} className="overflow-hidden">
-                                <div className="mt-1 ml-4 space-y-1">
-                                  {slotBookings.map((b, i) => (
-                                    <motion.div key={b.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }} className="px-3 py-2 rounded-lg bg-muted/40 border border-border/50 space-y-1.5">
-                                      <div className="flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">{b.name.charAt(0).toUpperCase()}</div>
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-xs font-semibold text-foreground truncate">{b.name}</p>
-                                          <p className="text-xs text-muted-foreground truncate">{b.email}</p>
-                                        </div>
-                                      </div>
-                                      <div className="space-y-1">
-                                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">3 Priority Choices</p>
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {[b.priority1, b.priority2, b.priority3].map((p, pi) => {
-                                            const isMatch = priorityMatchesSlot(p, slot.id);
-                                            return (
-                                              <div key={pi} className={cn(
-                                                "flex items-center gap-1 text-xs rounded-md px-1.5 py-0.5 border",
-                                                isMatch
-                                                  ? "bg-primary/10 border-primary/40 ring-1 ring-primary/30"
-                                                  : "bg-background border-border/50 opacity-50"
-                                              )}>
-                                                <span className={cn("font-bold text-[10px] shrink-0", PRIORITY_COLORS[pi])}>
-                                                  {["1st", "2nd", "3rd"][pi]}
-                                                </span>
-                                                <span className="font-medium">{fmtPriority(p, slots)}</span>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    </motion.div>
-                                  ))}
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      );
-                    })}
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{daySlots.length} slot{daySlots.length !== 1 ? "s" : ""}</span>
+                    {dayBookings.length > 0 && (
+                      <span className="flex items-center gap-1 text-primary font-medium"><Users className="w-3 h-3" />{dayBookings.length} booked</span>
+                    )}
                   </div>
                 )}
+                <button
+                  type="button"
+                  onClick={() => isAdding ? closeAddForm() : openAddForm(day)}
+                  className={cn(
+                    "flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg border transition-all",
+                    isAdding
+                      ? "border-border text-muted-foreground hover:bg-muted/40"
+                      : "border-primary/30 text-primary bg-primary/5 hover:bg-primary/10"
+                  )}
+                >
+                  {isAdding ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                  {isAdding ? "Cancel" : "Add"}
+                </button>
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
+
+            <AnimatePresence>
+              {isAdding && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="overflow-hidden"
+                >
+                  <div className="px-4 pb-3 pt-0 space-y-2 border-t border-border/50">
+                    <p className="text-xs font-semibold text-muted-foreground pt-2">New slot for {day}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Start Time</label>
+                        <input
+                          type="time"
+                          value={addStart}
+                          onChange={(e) => { setAddStart(e.target.value); setAddError(null); }}
+                          className="w-full text-xs bg-background border border-border rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">End Time</label>
+                        <input
+                          type="time"
+                          value={addEnd}
+                          onChange={(e) => { setAddEnd(e.target.value); setAddError(null); }}
+                          className="w-full text-xs bg-background border border-border rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
+                        />
+                      </div>
+                    </div>
+                    {addError && (
+                      <p className="text-xs text-destructive flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />{addError}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleAdd(day)}
+                      disabled={createSlot.isPending}
+                      className="w-full py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60 flex items-center justify-center gap-1.5"
+                    >
+                      {createSlot.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                      Add Slot
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {daySlots.length > 0 && (
+              <div className="px-4 pb-3 space-y-2">
+                {daySlots.map((slot) => {
+                  const slotBookings = bookingsForSlot(slot.id);
+                  const isExpanded = expandedSlotId === slot.id;
+                  return (
+                    <div key={slot.id}>
+                      <button
+                        onClick={() => setExpandedSlotId(isExpanded ? null : slot.id)}
+                        disabled={slotBookings.length === 0}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs border transition-all",
+                          slot.available
+                            ? "bg-primary/5 border-primary/20 hover:bg-primary/10"
+                            : "bg-muted/40 border-border opacity-60",
+                          isExpanded && "bg-primary/10 border-primary/30",
+                          slotBookings.length === 0 && "cursor-default"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3 h-3 text-muted-foreground" />
+                          <span className="font-medium text-foreground">{slot.startTime} – {slot.endTime}</span>
+                          {!slot.available && <span className="text-muted-foreground">(unavailable)</span>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {slotBookings.length > 0 && (
+                            <span className="flex items-center gap-1 text-primary font-semibold"><Users className="w-3 h-3" />{slotBookings.length}</span>
+                          )}
+                          {slotBookings.length > 0 && (
+                            <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground transition-transform", isExpanded && "rotate-180")} />
+                          )}
+                        </div>
+                      </button>
+                      <AnimatePresence>
+                        {isExpanded && slotBookings.length > 0 && (
+                          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} className="overflow-hidden">
+                            <div className="mt-1 ml-4 space-y-1">
+                              {slotBookings.map((b, i) => (
+                                <motion.div key={b.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }} className="px-3 py-2 rounded-lg bg-muted/40 border border-border/50 space-y-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">{b.name.charAt(0).toUpperCase()}</div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs font-semibold text-foreground truncate">{b.name}</p>
+                                      <p className="text-xs text-muted-foreground truncate">{b.email}</p>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">3 Priority Choices</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {[b.priority1, b.priority2, b.priority3].map((p, pi) => {
+                                        const isMatch = priorityMatchesSlot(p, slot.id);
+                                        return (
+                                          <div key={pi} className={cn(
+                                            "flex items-center gap-1 text-xs rounded-md px-1.5 py-0.5 border",
+                                            isMatch
+                                              ? "bg-primary/10 border-primary/40 ring-1 ring-primary/30"
+                                              : "bg-background border-border/50 opacity-50"
+                                          )}>
+                                            <span className={cn("font-bold text-[10px] shrink-0", PRIORITY_COLORS[pi])}>
+                                              {["1st", "2nd", "3rd"][pi]}
+                                            </span>
+                                            <span className="font-medium">{fmtPriority(p, slots)}</span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                </motion.div>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
