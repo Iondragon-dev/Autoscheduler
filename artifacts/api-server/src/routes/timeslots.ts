@@ -30,6 +30,16 @@ router.post("/timeslots", requireTeacherSession, async (req, res) => {
   }
 
   const { label, startTime, endTime } = parsed.data;
+
+  const toMins = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + (m ?? 0);
+  };
+  if (toMins(startTime) >= toMins(endTime)) {
+    res.status(400).json({ message: "Start time must be before end time." });
+    return;
+  }
+
   const [slot] = await db.insert(timeSlotsTable).values({ label, startTime, endTime, available: true }).returning();
   res.status(201).json(serializeSlot(slot));
 });
@@ -52,6 +62,15 @@ router.patch("/timeslots/:id", requireTeacherSession, async (req, res) => {
   if (parsed.data.label !== undefined) updates.label = parsed.data.label;
   if (parsed.data.startTime !== undefined) updates.startTime = parsed.data.startTime;
   if (parsed.data.endTime !== undefined) updates.endTime = parsed.data.endTime;
+
+  // Validate start < end when both are present after applying updates
+  const toMinsLocal = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m ?? 0); };
+  const effectiveStart = updates.startTime ?? (await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.id, id)).limit(1))[0]?.startTime;
+  const effectiveEnd = updates.endTime ?? (await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.id, id)).limit(1))[0]?.endTime;
+  if (effectiveStart && effectiveEnd && toMinsLocal(effectiveStart) >= toMinsLocal(effectiveEnd)) {
+    res.status(400).json({ message: "Start time must be before end time." });
+    return;
+  }
 
   const [updated] = await db.update(timeSlotsTable).set(updates).where(eq(timeSlotsTable.id, id)).returning();
   if (!updated) { res.status(404).json({ message: "Time slot not found" }); return; }

@@ -1764,6 +1764,10 @@ export default function Teacher() {
       setFormError("Please fill in all fields.");
       return;
     }
+    if (toMins(form.startTime) >= toMins(form.endTime)) {
+      setFormError("Start time must be before end time.");
+      return;
+    }
     setFormError(null);
     createSlot.mutate(
       { data: { label: form.label.trim(), startTime: form.startTime, endTime: form.endTime } },
