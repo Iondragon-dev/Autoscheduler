@@ -440,8 +440,23 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
 
   const createSlot = useCreateTimeSlot();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollBodyRef = useRef<HTMLDivElement>(null);
+  const [showPanelScrollCue, setShowPanelScrollCue] = useState(false);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [step, aiMessage]);
+
+  useEffect(() => {
+    const el = scrollBodyRef.current;
+    if (!el) return;
+    const check = () => {
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+      const canScroll = el.scrollHeight > el.clientHeight + 10;
+      setShowPanelScrollCue(canScroll && !atBottom);
+    };
+    const t = setTimeout(check, 120);
+    el.addEventListener("scroll", check, { passive: true });
+    return () => { clearTimeout(t); el.removeEventListener("scroll", check); };
+  }, [step, mode, editStep, blockStep, open]);
 
   function handleClose() {
     setOpen(false);
@@ -782,7 +797,7 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
             </div>
 
             {/* Body */}
-            <div className="overflow-y-auto flex-1 min-h-0">
+            <div ref={scrollBodyRef} className="overflow-y-auto flex-1 min-h-0">
               <AnimatePresence mode="wait">
 
                 {/* ── Create Schedule mode ── */}
@@ -1561,6 +1576,33 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
               <div ref={bottomRef} />
             </div>
 
+            {/* Panel scroll cue */}
+            <AnimatePresence>
+              {showPanelScrollCue && (
+                <motion.div
+                  key="panel-scroll-cue"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ duration: 0.2 }}
+                  className="shrink-0 flex flex-col items-center py-1.5 pointer-events-none bg-gradient-to-t from-card to-transparent"
+                >
+                  <span className="text-[10px] font-semibold text-muted-foreground/70 tracking-wide uppercase">
+                    Scroll for more
+                  </span>
+                  <motion.div
+                    animate={{ y: [0, 4, 0] }}
+                    transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
+                    className="text-primary/60"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Progress dots */}
             {mode === "create" && (step === "days" || step === "times") && (
               <div className="flex justify-center gap-1.5 py-3 border-t border-border shrink-0">
@@ -1821,6 +1863,20 @@ export default function Teacher() {
   const [form, setForm] = useState<NewSlotForm>({ day: "", startTime: "", endTime: "" });
   const [formError, setFormError] = useState<string | null>(null);
   const [showPasscodeDialog, setShowPasscodeDialog] = useState(false);
+  const [showScrollCue, setShowScrollCue] = useState(false);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+    const check = () => {
+      const canScroll = document.documentElement.scrollHeight > window.innerHeight + 10;
+      const atBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 40;
+      setShowScrollCue(canScroll && !atBottom);
+    };
+    const t = setTimeout(check, 80);
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check, { passive: true });
+    return () => { clearTimeout(t); window.removeEventListener("scroll", check); window.removeEventListener("resize", check); };
+  }, [tab]);
 
   type ScheduleResult = {
     bookingId: number; name: string; email: string;
@@ -2402,6 +2458,33 @@ export default function Teacher() {
         slots={(slots ?? []).map((s) => ({ ...s, blockedTimes: s.blockedTimes ?? [] }))}
         onSlotsCreated={() => { refetchSlots(); refetchBookings(); setTab("slots"); }}
       />
+
+      {/* ── Window-level scroll cue ── */}
+      <AnimatePresence>
+        {showScrollCue && (
+          <motion.div
+            key="scroll-cue"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.3 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1 pointer-events-none"
+          >
+            <span className="text-[11px] font-semibold text-muted-foreground/80 tracking-wide uppercase bg-background/70 backdrop-blur-sm px-2.5 py-0.5 rounded-full border border-border/40">
+              Scroll for more
+            </span>
+            <motion.div
+              animate={{ y: [0, 6, 0] }}
+              transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
+              className="text-primary/70"
+            >
+              <svg className="w-5 h-5 drop-shadow-sm" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+              </svg>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
