@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertCircle, ArrowRight, ArrowLeft, Check,
@@ -87,6 +87,24 @@ export default function Home() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [detailsErrors, setDetailsErrors] = useState<{ name?: string; email?: string }>({});
+
+  const [showScrollCue, setShowScrollCue] = useState(false);
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+    const check = () => {
+      const canScroll = document.documentElement.scrollHeight > window.innerHeight + 10;
+      const atBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 40;
+      setShowScrollCue(canScroll && !atBottom);
+    };
+    const t = setTimeout(check, 80);
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check, { passive: true });
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+    };
+  }, [page]);
 
   const availableSlots = (slots ?? []).filter(s => s.available);
 
@@ -419,40 +437,27 @@ export default function Home() {
                               </span>
                             </div>
                           ) : (
-                            <div className="relative">
-                              <div className="flex flex-wrap gap-2 max-h-72 overflow-y-auto pr-1">
-                                {times.map(t => {
-                                const endStr = fromMins(toMins(t) + dur!);
-                                const sel = c.start === t;
-                                return (
-                                  <button
-                                    key={t}
-                                    type="button"
-                                    onClick={() => updateChoice(choiceIdx, { start: t })}
-                                    className={cn(
-                                      "flex flex-col items-center px-3.5 py-2.5 rounded-xl border-2 transition-all",
-                                      sel
-                                        ? "border-primary bg-primary/10 text-primary"
-                                        : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 text-foreground",
-                                    )}
-                                  >
-                                    <span className="text-sm font-bold">{fmt12(t)}</span>
-                                    <span className="text-[10px] text-muted-foreground">to {fmt12(endStr)}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                              <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-background via-background/60 to-transparent pointer-events-none flex items-end justify-center pb-2">
-                                <motion.div
-                                  animate={{ y: [0, 6, 0] }}
-                                  transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
-                                  className="text-muted-foreground"
+                            <div className="flex flex-wrap gap-2 max-h-72 overflow-y-auto pr-1">
+                              {times.map(t => {
+                              const endStr = fromMins(toMins(t) + dur!);
+                              const sel = c.start === t;
+                              return (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  onClick={() => updateChoice(choiceIdx, { start: t })}
+                                  className={cn(
+                                    "flex flex-col items-center px-3.5 py-2.5 rounded-xl border-2 transition-all",
+                                    sel
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 text-foreground",
+                                  )}
                                 >
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                                  </svg>
-                                </motion.div>
-                              </div>
+                                  <span className="text-sm font-bold">{fmt12(t)}</span>
+                                  <span className="text-[10px] text-muted-foreground">to {fmt12(endStr)}</span>
+                                </button>
+                              );
+                            })}
                             </div>
                           )}
                         </>
@@ -651,6 +656,33 @@ export default function Home() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* ── Window-level scroll cue ── */}
+      <AnimatePresence>
+        {showScrollCue && (
+          <motion.div
+            key="scroll-cue"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.3 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-1 pointer-events-none"
+          >
+            <span className="text-[11px] font-semibold text-muted-foreground/80 tracking-wide uppercase bg-background/70 backdrop-blur-sm px-2.5 py-0.5 rounded-full border border-border/40">
+              Scroll for more
+            </span>
+            <motion.div
+              animate={{ y: [0, 6, 0] }}
+              transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
+              className="text-primary/70"
+            >
+              <svg className="w-5 h-5 drop-shadow-sm" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+              </svg>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
