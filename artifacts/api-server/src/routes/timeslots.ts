@@ -141,7 +141,31 @@ router.post("/bookings", async (req, res) => {
     return;
   }
 
-  const [booking] = await db.insert(bookingsTable).values({ timeSlotId, name, email, priority1, priority2, priority3 }).returning();
+  // Reject if this email already submitted a booking
+  const existing = await db.select({ id: bookingsTable.id })
+    .from(bookingsTable)
+    .where(eq(bookingsTable.email, email.toLowerCase().trim()))
+    .limit(1);
+  if (existing.length > 0) {
+    res.status(409).json({ message: "A booking request has already been submitted with this email address. Please contact your teacher if you need to make changes." });
+    return;
+  }
+
+  // Reject if any two priorities share the same slot + start time
+  const priorities = [priority1, priority2, priority3];
+  const slotStartKeys = priorities.map(p => {
+    if (!p) return null;
+    const pipeIdx = p.indexOf("|");
+    const dashIdx = p.indexOf("-", pipeIdx);
+    return pipeIdx === -1 ? p : p.slice(0, dashIdx === -1 ? undefined : dashIdx); // "slotId|startTime"
+  });
+  const uniqueKeys = new Set(slotStartKeys.filter(Boolean));
+  if (uniqueKeys.size < slotStartKeys.filter(Boolean).length) {
+    res.status(400).json({ message: "Your 3 preferences must each be a different time. Please go back and choose distinct times." });
+    return;
+  }
+
+  const [booking] = await db.insert(bookingsTable).values({ timeSlotId, name, email: email.toLowerCase().trim(), priority1, priority2, priority3 }).returning();
 
   res.status(201).json({
     id: booking.id,

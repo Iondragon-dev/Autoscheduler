@@ -87,6 +87,7 @@ export default function Home() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [detailsErrors, setDetailsErrors] = useState<{ name?: string; email?: string }>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [showScrollCue, setShowScrollCue] = useState(false);
   useEffect(() => {
@@ -151,6 +152,7 @@ export default function Home() {
       return `${c.slotId}|${c.start}-${end}`;
     });
 
+    setSubmitError(null);
     createBooking.mutate({
       data: {
         timeSlotId: choices[0].slotId!,
@@ -164,6 +166,17 @@ export default function Home() {
       onSuccess: d => {
         setConfirmedBooking(d);
         window.scrollTo({ top: 0, behavior: "smooth" });
+      },
+      onError: (err: unknown) => {
+        // Prefer the server's JSON `message` field if available
+        const serverMsg = (err as { data?: { message?: string } })?.data?.message;
+        const msg =
+          serverMsg ??
+          (err instanceof Error
+            ? err.message.replace(/^HTTP \d+ [^:]+:\s*/, "")
+            : typeof err === "string" ? err : null) ??
+          "Something went wrong. Please try again.";
+        setSubmitError(msg);
       },
     });
   };
@@ -415,6 +428,13 @@ export default function Home() {
                       const times = slot && dur
                         ? generateStartTimes(slot.startTime, slot.endTime, dur, slot.blockedTimes ?? [])
                         : [];
+                      // Times already chosen in other preferences for the same slot
+                      const alreadyPicked = new Set(
+                        choices
+                          .filter((_, i) => i !== choiceIdx)
+                          .filter(ch => ch.slotId === c.slotId && ch.start !== null)
+                          .map(ch => ch.start!)
+                      );
 
                       return (
                         <>
@@ -441,20 +461,25 @@ export default function Home() {
                               {times.map(t => {
                               const endStr = fromMins(toMins(t) + dur!);
                               const sel = c.start === t;
+                              const taken = alreadyPicked.has(t);
                               return (
                                 <button
                                   key={t}
                                   type="button"
-                                  onClick={() => updateChoice(choiceIdx, { start: t })}
+                                  disabled={taken}
+                                  onClick={() => !taken && updateChoice(choiceIdx, { start: t })}
+                                  title={taken ? "Already chosen as another preference" : undefined}
                                   className={cn(
                                     "flex flex-col items-center px-3.5 py-2.5 rounded-xl border-2 transition-all",
-                                    sel
-                                      ? "border-primary bg-primary/10 text-primary"
-                                      : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 text-foreground",
+                                    taken
+                                      ? "border-border/30 bg-muted/40 text-muted-foreground/40 cursor-not-allowed line-through"
+                                      : sel
+                                        ? "border-primary bg-primary/10 text-primary"
+                                        : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 text-foreground",
                                   )}
                                 >
                                   <span className="text-sm font-bold">{fmt12(t)}</span>
-                                  <span className="text-[10px] text-muted-foreground">to {fmt12(endStr)}</span>
+                                  <span className="text-[10px]">{taken ? "chosen" : `to ${fmt12(endStr)}`}</span>
                                 </button>
                               );
                             })}
@@ -536,10 +561,10 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {createBooking.isError && (
-                          <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm flex gap-2 items-center">
-                            <AlertCircle className="w-4 h-4 shrink-0" />
-                            Failed to submit. Please try again.
+                        {(createBooking.isError || submitError) && (
+                          <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm flex gap-2 items-start">
+                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                            <span>{submitError ?? "Failed to submit. Please try again."}</span>
                           </div>
                         )}
                       </>
