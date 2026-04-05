@@ -1585,7 +1585,8 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 4 }}
                   transition={{ duration: 0.2 }}
-                  className="shrink-0 flex flex-col items-center py-1.5 pointer-events-none bg-gradient-to-t from-card to-transparent"
+                  onClick={() => scrollBodyRef.current?.scrollBy({ top: 200, behavior: "smooth" })}
+                  className="shrink-0 flex flex-col items-center py-1.5 cursor-pointer bg-gradient-to-t from-card to-transparent"
                 >
                   <span className="text-[10px] font-semibold text-muted-foreground/70 tracking-wide uppercase">
                     Scroll for more
@@ -2468,7 +2469,8 @@ export default function Teacher() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.3 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1 pointer-events-none"
+            onClick={() => window.scrollBy({ top: 300, behavior: "smooth" })}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1 cursor-pointer"
           >
             <span className="text-[11px] font-semibold text-muted-foreground/80 tracking-wide uppercase bg-background/70 backdrop-blur-sm px-2.5 py-0.5 rounded-full border border-border/40">
               Scroll for more
