@@ -130,7 +130,9 @@ export default function Home() {
     if (subPage === 0) return c.slotId !== null;
     if (subPage === 1) {
       const d = getEffectiveDuration(c);
-      return d !== null && d > 0 && d <= 480;
+      if (d === null || d <= 0 || d > 480) return false;
+      if (slotWindowMins !== null && d > slotWindowMins) return false;
+      return true;
     }
     if (subPage === 2) return c.start !== null;
     return false;
@@ -184,6 +186,9 @@ export default function Home() {
   const currentC = choices[choiceIdx];
   const currentSlot = availableSlots.find(s => s.id === currentC?.slotId);
   const currentDur = currentC ? getEffectiveDuration(currentC) : null;
+  const slotWindowMins = currentSlot
+    ? toMins(currentSlot.endTime) - toMins(currentSlot.startTime)
+    : null;
   const timeOptions = currentSlot && currentDur
     ? generateStartTimes(currentSlot.startTime, currentSlot.endTime, currentDur, currentSlot.blockedTimes ?? [])
     : [];
@@ -349,6 +354,8 @@ export default function Home() {
                     {/* ────── DURATION PICKER (subPage === 1) ────── */}
                     {subPage === 1 && !isDetails && (() => {
                       const c = choices[choiceIdx];
+                      const dur = getEffectiveDuration(c);
+                      const overWindow = slotWindowMins !== null && dur !== null && dur > slotWindowMins;
                       return (
                         <>
                           <div>
@@ -357,7 +364,12 @@ export default function Home() {
                               How long do you need?
                             </h2>
                             <p className="text-sm text-muted-foreground mt-1">
-                              Choose a session duration for your {PRIORITY_LABELS[choiceIdx]} choice.
+                              Choose a session duration for your {PRIORITY_LABELS[choiceIdx]} choice.{" "}
+                              {slotWindowMins !== null && (
+                                <span className="font-medium text-foreground">
+                                  Available window: {slotWindowMins} min.
+                                </span>
+                              )}
                             </p>
                           </div>
 
@@ -414,6 +426,22 @@ export default function Home() {
                                 className="w-full text-sm bg-background border border-border rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
                                 autoFocus
                               />
+                            </motion.div>
+                          )}
+
+                          {overWindow && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm flex gap-2 items-start"
+                            >
+                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                              <span>
+                                <span className="font-semibold">{dur} min</span> exceeds this slot's total window of{" "}
+                                <span className="font-semibold">{slotWindowMins} min</span>{" "}
+                                ({currentSlot && `${fmt12(currentSlot.startTime)} – ${fmt12(currentSlot.endTime)}`}).{" "}
+                                Please choose a shorter duration or go back and pick a different day.
+                              </span>
                             </motion.div>
                           )}
                         </>
