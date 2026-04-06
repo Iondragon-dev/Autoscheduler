@@ -354,8 +354,12 @@ router.post("/bookings/apply-schedule", requireTeacherSession, async (req, res) 
     res.status(400).json({ message: "results must be an array" });
     return;
   }
+  const slotIds = await getTeacherSlotIds(res.locals.teacherId);
+  if (slotIds.length === 0) { res.json({ ok: true }); return; }
   for (const r of results) {
-    await db.update(bookingsTable).set({ assignedPriority: r.assignedPriority, assignedTime: r.assignedTime }).where(eq(bookingsTable.id, r.bookingId));
+    await db.update(bookingsTable)
+      .set({ assignedPriority: r.assignedPriority, assignedTime: r.assignedTime })
+      .where(and(eq(bookingsTable.id, r.bookingId), inArray(bookingsTable.timeSlotId, slotIds)));
   }
   res.json({ ok: true });
 });
