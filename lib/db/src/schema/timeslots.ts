@@ -2,8 +2,18 @@ import { pgTable, serial, text, boolean, timestamp, integer, json } from "drizzl
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
+export const teachersTable = pgTable("teachers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  passcode: text("passcode").notNull(),
+  subject: text("subject"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const timeSlotsTable = pgTable("time_slots", {
   id: serial("id").primaryKey(),
+  teacherId: integer("teacher_id").references(() => teachersTable.id),
   label: text("label").notNull(),
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
@@ -28,3 +38,4 @@ export const insertBookingSchema = createInsertSchema(bookingsTable).omit({ id: 
 export type InsertBooking = z.infer<typeof insertBookingSchema>;
 export type TimeSlot = typeof timeSlotsTable.$inferSelect;
 export type Booking = typeof bookingsTable.$inferSelect;
+export type Teacher = typeof teachersTable.$inferSelect;

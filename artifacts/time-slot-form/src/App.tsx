@@ -5,6 +5,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/Home";
 import Teacher from "@/pages/Teacher";
 import TeacherGate from "@/pages/TeacherGate";
+import TeacherDirectory from "@/pages/TeacherDirectory";
+import TeacherSignup from "@/pages/TeacherSignup";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -19,7 +21,9 @@ const queryClient = new QueryClient({
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
+      <Route path="/" component={TeacherDirectory} />
+      <Route path="/book/:slug" component={Home} />
+      <Route path="/teacher/signup" component={TeacherSignup} />
       <Route path="/teacher">
         <TeacherGate>
           <Teacher />

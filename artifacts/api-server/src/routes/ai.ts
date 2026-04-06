@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { requireTeacherSession } from "./auth";
 import { db, bookingsTable, timeSlotsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -190,8 +190,12 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
     return;
   }
 
-  const allBookings = await db.select().from(bookingsTable).orderBy(bookingsTable.createdAt);
-  const allSlots = await db.select().from(timeSlotsTable);
+  const teacherId = res.locals.teacherId;
+  const allSlots = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.teacherId, teacherId));
+  const teacherSlotIds = allSlots.map(s => s.id);
+  const allBookings = teacherSlotIds.length > 0
+    ? await db.select().from(bookingsTable).where(inArray(bookingsTable.timeSlotId, teacherSlotIds)).orderBy(bookingsTable.createdAt)
+    : [];
 
   if (allBookings.length === 0) {
     res.status(400).json({ message: "No student bookings found to schedule." });

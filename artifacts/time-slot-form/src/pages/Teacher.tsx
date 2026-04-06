@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
-import { signOutTeacher } from "./TeacherGate";
+import { signOutTeacher, getTeacherInfo } from "./TeacherGate";
 import { fmt12, fmtPriority, toMins, fromMins } from "@/lib/booking-utils";
 import JSZip from "jszip";
 
@@ -2072,7 +2072,9 @@ export default function Teacher() {
               </button>
             </div>
           </div>
-          <h1 className="text-4xl font-display font-bold text-foreground mb-2">Teacher Area</h1>
+          <h1 className="text-4xl font-display font-bold text-foreground mb-2">
+            {getTeacherInfo()?.name ?? "Teacher Area"}
+          </h1>
           <p className="text-muted-foreground text-lg">Manage your schedule and view student bookings.</p>
         </div>
 

@@ -2,14 +2,29 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertCircle, ArrowRight, ArrowLeft, Check,
-  User, Mail, Clock, CalendarDays, Timer,
+  User, Mail, Clock, CalendarDays, Timer, GraduationCap,
 } from "lucide-react";
-import { useGetTimeSlots, useCreateBooking } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
+import { useCreateBooking } from "@workspace/api-client-react";
 import type { Booking } from "@workspace/api-client-react";
-import { Link } from "wouter";
+import { Link, useParams } from "wouter";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { fmt12, fromMins, toMins } from "@/lib/booking-utils";
+
+type ApiSlot = {
+  id: number;
+  label: string;
+  startTime: string;
+  endTime: string;
+  available: boolean;
+  blockedTimes: { start: string; end: string }[] | null;
+};
+
+type TeacherSlotData = {
+  teacher: { id: number; name: string; slug: string; subject: string | null };
+  slots: ApiSlot[];
+};
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -73,8 +88,19 @@ function generateStartTimes(
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function Home() {
-  const { data: slots, isLoading, isError } = useGetTimeSlots();
+  const { slug } = useParams<{ slug: string }>();
+  const { data: teacherData, isLoading, isError } = useQuery<TeacherSlotData>({
+    queryKey: ["teacher-slots", slug],
+    queryFn: async () => {
+      const res = await fetch(`/api/teachers/${slug}/timeslots`);
+      if (!res.ok) throw new Error("Teacher not found");
+      return res.json() as Promise<TeacherSlotData>;
+    },
+    enabled: !!slug,
+  });
   const createBooking = useCreateBooking();
+  const teacher = teacherData?.teacher;
+  const slots = teacherData?.slots ?? [];
 
   const [page, setPage] = useState(0);
   const [direction, setDirection] = useState(1);
@@ -242,9 +268,12 @@ export default function Home() {
       />
 
       <div className="relative w-full max-w-lg mx-auto z-10">
-        <div className="flex justify-end mb-3">
+        <div className="flex justify-between items-center mb-3">
+          <Link href="/" className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
+            ← All Teachers
+          </Link>
           <Link href="/teacher" className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
-            Teacher Area →
+            Teacher Sign In →
           </Link>
         </div>
 
@@ -260,6 +289,19 @@ export default function Home() {
             >
               {/* ── Header / progress ── */}
               <div className="bg-primary/5 border-b border-border/40 px-6 sm:px-8 pt-6 pb-4">
+                {teacher && (
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <GraduationCap className="w-3.5 h-3.5 text-primary" />
+                    </div>
+                    <div>
+                      <span className="text-sm font-semibold text-foreground">{teacher.name}</span>
+                      {teacher.subject && (
+                        <span className="text-xs text-muted-foreground ml-1.5">· {teacher.subject}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <p className="text-xs font-semibold text-primary/70 uppercase tracking-widest">Session Booking</p>

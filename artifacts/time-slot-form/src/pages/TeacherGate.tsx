@@ -1,33 +1,37 @@
 import { useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, AlertCircle, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { Lock, AlertCircle, ArrowRight, Eye, EyeOff, UserPlus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 
 export const SESSION_KEY = "teacherAuth";
 
-async function verifyPasscode(passcode: string): Promise<boolean> {
-  const res = await fetch("/api/auth/teacher", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ passcode }),
-  });
-  return res.ok;
+export interface TeacherInfo {
+  id: number;
+  name: string;
+  slug: string;
+  subject: string | null;
 }
 
+export function getTeacherInfo(): TeacherInfo | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as TeacherInfo;
+  } catch {
+    return null;
+  }
+}
 
-/** Call this to immediately sign out of the teacher area. */
 export function signOutTeacher() {
   sessionStorage.removeItem(SESSION_KEY);
   fetch("/api/auth/teacher/logout", { method: "POST" }).catch(() => {});
 }
 
 export default function TeacherGate({ children }: { children: ReactNode }) {
-  const [authed, setAuthed] = useState<boolean>(() => {
-    return sessionStorage.getItem(SESSION_KEY) === "1";
-  });
+  const [authed, setAuthed] = useState<boolean>(() => getTeacherInfo() !== null);
+  const [slug, setSlug] = useState("");
   const [passcode, setPasscode] = useState("");
   const [showPasscode, setShowPasscode] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -36,24 +40,35 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!passcode) return;
+    if (!slug.trim() || !passcode) return;
     setLoading(true);
     setError("");
-
-    const ok = await verifyPasscode(passcode);
-    setLoading(false);
-
-    if (ok) {
-      sessionStorage.setItem(SESSION_KEY, "1");
-      setAuthed(true);
-    } else {
-      setError("Incorrect passcode. Please try again.");
+    try {
+      const res = await fetch("/api/auth/teacher", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: slug.trim(), passcode }),
+      });
+      if (res.ok) {
+        const info = await res.json() as TeacherInfo;
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(info));
+        setAuthed(true);
+      } else {
+        const data = await res.json().catch(() => ({})) as { message?: string };
+        setError(data.message ?? "Incorrect details. Please try again.");
+        setShake(true);
+        setPasscode("");
+        setTimeout(() => setShake(false), 600);
+      }
+    } catch {
+      setError("Network error. Please try again.");
       setShake(true);
-      setPasscode("");
       setTimeout(() => setShake(false), 600);
+    } finally {
+      setLoading(false);
     }
   }
-
 
   if (authed) return <>{children}</>;
 
@@ -75,18 +90,28 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
             <Lock className="w-7 h-7 text-primary" />
           </div>
 
-          <h1 className="text-2xl font-display font-bold text-foreground mb-1">Teacher Area</h1>
-          <p className="text-sm text-muted-foreground mb-7">Enter the passcode to continue.</p>
+          <h1 className="text-2xl font-display font-bold text-foreground mb-1">Teacher Sign In</h1>
+          <p className="text-sm text-muted-foreground mb-7">Enter your URL name and passcode to continue.</p>
 
-          <form onSubmit={handleSubmit} className="space-y-4 text-left">
+          <form onSubmit={handleSubmit} className="space-y-3 text-left">
+            <Input
+              type="text"
+              placeholder="URL name (e.g. ms-smith)"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+              autoFocus
+              autoComplete="username"
+              error={!!error}
+            />
+
             <div className="relative">
               <Input
                 type={showPasscode ? "text" : "password"}
                 placeholder="Passcode"
                 value={passcode}
                 onChange={(e) => setPasscode(e.target.value)}
-                autoFocus
                 className="pr-10"
+                autoComplete="current-password"
                 error={!!error}
               />
               <button
@@ -114,16 +139,24 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
             </AnimatePresence>
 
             <Button type="submit" className="w-full" isLoading={loading}>
-              Enter
+              Sign In
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </form>
         </motion.div>
 
-        <div className="text-center mt-5">
-          <Link href="/" className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
-            ← Back to booking
-          </Link>
+        <div className="text-center mt-5 space-y-2">
+          <div>
+            <Link href="/teacher/signup" className="inline-flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors font-medium">
+              <UserPlus className="w-3.5 h-3.5" />
+              Create a new teacher account
+            </Link>
+          </div>
+          <div>
+            <Link href="/" className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
+              ← Back to directory
+            </Link>
+          </div>
         </div>
       </div>
     </div>
