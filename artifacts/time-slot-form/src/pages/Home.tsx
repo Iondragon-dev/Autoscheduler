@@ -126,6 +126,25 @@ export default function Home() {
     return c.duration;
   };
 
+  const validateCustomTime = (
+    start: string,
+    slotStart: string,
+    slotEnd: string,
+    dur: number,
+    blockedTimes: { start: string; end: string }[],
+  ): string | null => {
+    const startMins = toMins(start);
+    const endMins = startMins + dur;
+    if (startMins < toMins(slotStart))
+      return `Start time must be at or after ${fmt12(slotStart)}.`;
+    if (endMins > toMins(slotEnd))
+      return `Session would end at ${fmt12(fromMins(endMins))}, after the slot closes at ${fmt12(slotEnd)}.`;
+    const isBlocked = blockedTimes.some(bt => startMins < toMins(bt.end) && endMins > toMins(bt.start));
+    if (isBlocked)
+      return "That time overlaps with a blocked period. Please choose a different time.";
+    return null;
+  };
+
   const canGoNext = (): boolean => {
     if (isDetails) return false;
     const c = choices[choiceIdx];
@@ -136,7 +155,14 @@ export default function Home() {
       if (slotWindowMins !== null && d > slotWindowMins) return false;
       return true;
     }
-    if (subPage === 2) return c.start !== null;
+    if (subPage === 2) {
+      if (c.start === null) return false;
+      if (c.isCustomTime && currentSlot && currentDur) {
+        const err = validateCustomTime(c.start, currentSlot.startTime, currentSlot.endTime, currentDur, currentSlot.blockedTimes ?? []);
+        if (err) return false;
+      }
+      return true;
+    }
     return false;
   };
 
@@ -465,6 +491,9 @@ export default function Home() {
                           .filter(ch => ch.slotId === c.slotId && ch.start !== null)
                           .map(ch => ch.start!)
                       );
+                      const customTimeError = c.isCustomTime && c.customTimeStr && slot && dur
+                        ? validateCustomTime(c.customTimeStr, slot.startTime, slot.endTime, dur, slot.blockedTimes ?? [])
+                        : null;
 
                       return (
                         <>
@@ -533,28 +562,55 @@ export default function Home() {
                               <motion.div
                                 initial={{ opacity: 0, height: 0 }}
                                 animate={{ opacity: 1, height: "auto" }}
-                                className="space-y-1"
+                                className="space-y-2"
                               >
                                 <label className="text-sm font-medium text-foreground">
-                                  Start time (HH:MM)
+                                  Start time
                                 </label>
                                 <input
                                   type="time"
                                   value={c.customTimeStr}
-                                  onChange={e => updateChoice(choiceIdx, { customTimeStr: e.target.value })}
-                                  className="w-full text-sm bg-background border border-border rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
+                                  onChange={e => updateChoice(choiceIdx, { customTimeStr: e.target.value, start: null })}
+                                  className={cn(
+                                    "w-full text-sm bg-background border rounded-xl px-3 py-2.5 outline-none focus:ring-2 transition-all",
+                                    customTimeError
+                                      ? "border-destructive/60 focus:ring-destructive/20 focus:border-destructive/60"
+                                      : "border-border focus:ring-primary/30 focus:border-primary/50",
+                                  )}
                                   autoFocus
                                 />
+                                {customTimeError && (
+                                  <motion.div
+                                    initial={{ opacity: 0, y: -4 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="flex items-start gap-2 p-3 rounded-xl bg-destructive/8 border border-destructive/25 text-destructive text-sm"
+                                  >
+                                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                                    {customTimeError}
+                                  </motion.div>
+                                )}
                               </motion.div>
                             )}
 
                           {c.isCustomTime && c.customTimeStr && (
                             <button
                               type="button"
-                              onClick={() => updateChoice(choiceIdx, { start: c.customTimeStr })}
-                              className="w-full py-2.5 rounded-xl border-2 border-primary bg-primary/10 text-primary text-sm font-semibold transition-all hover:bg-primary/20"
+                              disabled={!!customTimeError}
+                              onClick={() => !customTimeError && updateChoice(choiceIdx, { start: c.customTimeStr })}
+                              className={cn(
+                                "w-full py-2.5 rounded-xl border-2 text-sm font-semibold transition-all",
+                                customTimeError
+                                  ? "border-border bg-muted/40 text-muted-foreground cursor-not-allowed"
+                                  : c.start === c.customTimeStr
+                                    ? "border-green-500 bg-green-50 text-green-700 hover:bg-green-100"
+                                    : "border-primary bg-primary/10 text-primary hover:bg-primary/20",
+                              )}
                             >
-                              Confirm: {fmt12(c.customTimeStr)}
+                              {customTimeError
+                                ? "Fix the time above to continue"
+                                : c.start === c.customTimeStr
+                                  ? `✓ Confirmed: ${fmt12(c.customTimeStr)}`
+                                  : `Confirm: ${fmt12(c.customTimeStr)}`}
                             </button>
                           )}
                             </>
