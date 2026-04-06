@@ -11,7 +11,7 @@ import {
   Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft,
   AlertCircle, Calendar, ChevronDown, Mail, User, Sparkles, X,
   Bot, CheckCircle2, ArrowRight, Loader2, KeyRound, Eye, EyeOff, Ban, Upload,
-  Wand2, CheckCheck, RotateCcw,
+  Wand2, CheckCheck, RotateCcw, TriangleAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -183,6 +183,116 @@ function ChangePasscodeDialog({ open, onClose }: { open: boolean; onClose: () =>
                 </div>
               </form>
             )}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function DeleteAccountDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [, navigate] = useLocation();
+  const [confirm, setConfirm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  function reset() { setConfirm(""); setError(""); setLoading(false); }
+  function handleClose() { reset(); onClose(); }
+
+  async function handleDelete(e: React.FormEvent) {
+    e.preventDefault();
+    if (confirm !== "DELETE") { setError('Type DELETE (all caps) to confirm.'); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await adminFetch("/api/teachers/me", { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { message?: string };
+        setError(data.message ?? "Failed to delete account.");
+      } else {
+        signOutTeacher();
+        navigate("/");
+      }
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 16 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-sm p-6"
+          >
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-destructive/10 flex items-center justify-center">
+                  <TriangleAlert className="w-4 h-4 text-destructive" />
+                </div>
+                <h2 className="text-lg font-bold font-display">Delete Account</h2>
+              </div>
+              <button onClick={handleClose} className="text-muted-foreground hover:text-foreground transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mb-5 p-3.5 rounded-xl bg-destructive/8 border border-destructive/20 text-sm text-destructive space-y-1.5">
+              <p className="font-semibold">This action is permanent.</p>
+              <p className="text-destructive/80">
+                Your account and sign-in access will be removed. Your time slots and student bookings will remain in the system as unlinked records.
+              </p>
+            </div>
+
+            <form onSubmit={handleDelete} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-1.5">
+                  Type <span className="font-mono text-destructive">DELETE</span> to confirm
+                </label>
+                <Input
+                  type="text"
+                  placeholder="DELETE"
+                  value={confirm}
+                  onChange={(e) => { setConfirm(e.target.value); setError(""); }}
+                  autoFocus
+                  autoComplete="off"
+                  error={!!error}
+                />
+              </div>
+
+              <AnimatePresence>
+                {error && (
+                  <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                    className="text-sm font-medium text-destructive flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0" />{error}
+                  </motion.p>
+                )}
+              </AnimatePresence>
+
+              <div className="flex gap-2 pt-1">
+                <Button type="button" variant="outline" className="flex-1" onClick={handleClose}>Cancel</Button>
+                <Button
+                  type="submit"
+                  className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                  isLoading={loading}
+                  disabled={confirm !== "DELETE"}
+                >
+                  Delete Account
+                </Button>
+              </div>
+            </form>
           </motion.div>
         </motion.div>
       )}
@@ -1864,6 +1974,7 @@ export default function Teacher() {
   const [form, setForm] = useState<NewSlotForm>({ day: "", startTime: "", endTime: "" });
   const [formError, setFormError] = useState<string | null>(null);
   const [showPasscodeDialog, setShowPasscodeDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showScrollCue, setShowScrollCue] = useState(false);
 
   useEffect(() => {
@@ -2049,6 +2160,7 @@ export default function Teacher() {
 
       <div className="relative max-w-3xl mx-auto z-10 pb-24">
         <ChangePasscodeDialog open={showPasscodeDialog} onClose={() => setShowPasscodeDialog(false)} />
+        <DeleteAccountDialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)} />
 
         {/* Header */}
         <div className="mb-8">
@@ -2063,6 +2175,13 @@ export default function Teacher() {
               >
                 <KeyRound className="w-3.5 h-3.5" />
                 Change Passcode
+              </button>
+              <button
+                onClick={() => setShowDeleteDialog(true)}
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive border border-border/50 hover:border-destructive/40 rounded-lg px-3 py-1.5 transition-all bg-card/60 hover:bg-card"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete Account
               </button>
               <button
                 onClick={() => { signOutTeacher(); navigate("/"); }}
