@@ -19,6 +19,8 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 ## Notes
 
 - **Google Calendar integration**: User dismissed the Replit Google Calendar OAuth flow. If revisited, the connector ID is `connector:ccfg_google-calendar_DDDBAC03DE404369B74F32E78D`. Alternatively, manual credentials (Client ID, Client Secret, Calendar ID) can be stored as secrets to use the Google Calendar API directly.
+- **AI Auto-Scheduling**: `POST /api/ai/auto-schedule` (SSE) — accepts `{ preferences, apply }`. Streams reasoning to client; parses `<SCHEDULE_PARAMS>` block with AI-reordered student IDs; runs greedy algorithm; emits `{ schedule: { results, summary, reasoning } }` then `{ done: true }`. Frontend has an AI panel in the Auto-Schedule tab (Teacher.tsx) with textarea + "Run with AI" button; reasoning streams in real time; final preview shows "AI-Ordered" badge + one-line reasoning summary; Apply button routes to `POST /api/bookings/apply-schedule` for AI-generated schedules.
+- **Apply-Schedule endpoint**: `POST /api/bookings/apply-schedule` — accepts pre-computed results array, persists directly (used for both AI and potentially other pre-computed schedules).
 
 ## Structure
 

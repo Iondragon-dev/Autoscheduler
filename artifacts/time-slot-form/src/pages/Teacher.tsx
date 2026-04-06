@@ -1892,6 +1892,82 @@ export default function Teacher() {
   const [scheduleApplied, setScheduleApplied] = useState(false);
   const [clearScheduleConfirm, setClearScheduleConfirm] = useState(false);
   const [isClearingSchedule, setIsClearingSchedule] = useState(false);
+  const [aiPreferences, setAiPreferences] = useState("");
+  const [isAiScheduling, setIsAiScheduling] = useState(false);
+  const [aiReasoning, setAiReasoning] = useState<string | null>(null);
+  const [aiReasoningSummary, setAiReasoningSummary] = useState<string | null>(null);
+  const [scheduleIsAiGenerated, setScheduleIsAiGenerated] = useState(false);
+
+  const handleAiSchedule = async () => {
+    if (!aiPreferences.trim() || isAiScheduling) return;
+    setIsAiScheduling(true);
+    setAiReasoning(null);
+    setAiReasoningSummary(null);
+    setScheduleApplied(false);
+    setScheduleIsAiGenerated(false);
+    setSchedulePreview(null);
+    setScheduleSummary(null);
+    try {
+      const res = await adminFetch(`${import.meta.env.BASE_URL}api/ai/auto-schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preferences: aiPreferences, apply: false }),
+      });
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let full = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.content) {
+              full += data.content;
+              setAiReasoning(full.replace(/<SCHEDULE_PARAMS>[\s\S]*?<\/SCHEDULE_PARAMS>/g, "").trim());
+            }
+            if (data.schedule) {
+              setSchedulePreview(data.schedule.results);
+              setScheduleSummary(data.schedule.summary);
+              if (data.schedule.reasoning) setAiReasoningSummary(data.schedule.reasoning);
+              setScheduleIsAiGenerated(true);
+            }
+          } catch { /* skip malformed lines */ }
+        }
+      }
+    } catch {
+      setAiReasoning("Something went wrong. Please try again.");
+    } finally {
+      setIsAiScheduling(false);
+    }
+  };
+
+  const handleApplyAiSchedule = async () => {
+    if (!schedulePreview) return;
+    setIsApplyingSchedule(true);
+    try {
+      await adminFetch(`${import.meta.env.BASE_URL}api/bookings/apply-schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          results: schedulePreview.map((r) => ({
+            bookingId: r.bookingId,
+            assignedPriority: r.assignedPriority,
+            assignedTime: r.assignedTime,
+          })),
+        }),
+      });
+      setScheduleApplied(true);
+      refetchBookings();
+    } finally {
+      setIsApplyingSchedule(false);
+    }
+  };
 
   const handleAddSlot = () => {
     if (!form.day || !form.startTime || !form.endTime) {
@@ -2282,19 +2358,81 @@ export default function Teacher() {
             <motion.div key="schedule" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.25 }}>
               <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-lg p-5 space-y-5">
                 {/* Header */}
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="font-bold text-foreground text-lg flex items-center gap-2">
-                      <Wand2 className="w-5 h-5 text-primary" />Auto-Schedule Students
-                    </h2>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Assigns each student to their highest available preference. When two students want the same slot, the earlier submission wins.
-                    </p>
+                <div>
+                  <h2 className="font-bold text-foreground text-lg flex items-center gap-2">
+                    <Wand2 className="w-5 h-5 text-primary" />Auto-Schedule Students
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Assigns each student to their highest available preference. When two students want the same slot, the earlier submission wins — or let AI apply your custom rules.
+                  </p>
+                </div>
+
+                {/* AI Preferences Panel */}
+                <div className="rounded-xl border border-primary/25 bg-primary/5 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Bot className="w-4 h-4 text-primary shrink-0" />
+                    <span className="text-sm font-semibold text-foreground">AI Scheduling Preferences</span>
+                    <span className="text-xs text-muted-foreground ml-auto">Tell the AI how to prioritise students</span>
                   </div>
+                  <textarea
+                    value={aiPreferences}
+                    onChange={(e) => setAiPreferences(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleAiSchedule(); }}
+                    placeholder={`e.g. "Prioritise students who submitted late" · "Give priority to Alice and Bob" · "Randomise the order" · "Favour students who only got 3rd choice last time"`}
+                    disabled={isAiScheduling || (bookings?.length ?? 0) === 0}
+                    rows={2}
+                    className="w-full resize-none rounded-lg border border-border/60 bg-background/80 px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50 transition-all"
+                  />
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[11px] text-muted-foreground">⌘↵ to run · AI reads names, emails, submission times and preferences</p>
+                    <button
+                      onClick={handleAiSchedule}
+                      disabled={isAiScheduling || !aiPreferences.trim() || (bookings?.length ?? 0) === 0}
+                      className="shrink-0 flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-all"
+                    >
+                      {isAiScheduling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      {isAiScheduling ? "AI thinking…" : "Run with AI"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* AI Reasoning display */}
+                <AnimatePresence>
+                  {(aiReasoning || isAiScheduling) && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      className="rounded-xl border border-border bg-muted/30 p-4 space-y-2"
+                    >
+                      <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        <Bot className="w-3.5 h-3.5 text-primary" />AI Reasoning
+                        {isAiScheduling && <Loader2 className="w-3 h-3 animate-spin ml-1 text-primary" />}
+                      </div>
+                      <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                        {aiReasoning || <span className="text-muted-foreground italic">Analysing preferences…</span>}
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Divider */}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-xs text-muted-foreground">or run without AI</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+
+                {/* Standard Run Preview */}
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">Standard greedy — earlier submission wins ties</p>
                   <button
                     onClick={async () => {
                       setIsScheduling(true);
                       setScheduleApplied(false);
+                      setAiReasoning(null);
+                      setAiReasoningSummary(null);
+                      setScheduleIsAiGenerated(false);
                       try {
                         const res = await adminFetch(`${import.meta.env.BASE_URL}api/bookings/auto-schedule`, {
                           method: "POST",
@@ -2308,8 +2446,8 @@ export default function Teacher() {
                         setIsScheduling(false);
                       }
                     }}
-                    disabled={isScheduling || (bookings?.length ?? 0) === 0}
-                    className="shrink-0 flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-all"
+                    disabled={isScheduling || isAiScheduling || (bookings?.length ?? 0) === 0}
+                    className="shrink-0 flex items-center gap-2 border border-border text-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:bg-muted/50 disabled:opacity-50 transition-all"
                   >
                     {isScheduling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
                     {isScheduling ? "Computing…" : "Run Preview"}
@@ -2326,6 +2464,11 @@ export default function Teacher() {
                   <>
                     {/* Summary badges */}
                     <div className="flex flex-wrap gap-2">
+                      {scheduleIsAiGenerated && (
+                        <span className="flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full border bg-primary/10 text-primary border-primary/30">
+                          <Sparkles className="w-3 h-3" />AI-Ordered
+                        </span>
+                      )}
                       {[
                         { label: "1st choice", value: scheduleSummary.got1st, color: "bg-green-500/15 text-green-700 border-green-500/30" },
                         { label: "2nd choice", value: scheduleSummary.got2nd, color: "bg-blue-500/15 text-blue-700 border-blue-500/30" },
@@ -2340,6 +2483,14 @@ export default function Teacher() {
                         {scheduleApplied ? "· Schedule applied to database" : "· Preview only — not saved yet"}
                       </span>
                     </div>
+
+                    {/* AI reasoning summary */}
+                    {scheduleIsAiGenerated && aiReasoningSummary && (
+                      <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 px-3 py-2">
+                        <Bot className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                        <p className="text-xs text-muted-foreground">{aiReasoningSummary}</p>
+                      </div>
+                    )}
 
                     {/* Results table */}
                     <div className="rounded-xl border border-border overflow-hidden">
@@ -2391,7 +2542,7 @@ export default function Teacher() {
                     {/* Action buttons */}
                     <div className="flex items-center gap-3 flex-wrap">
                       <button
-                        onClick={async () => {
+                        onClick={scheduleIsAiGenerated ? handleApplyAiSchedule : async () => {
                           setIsApplyingSchedule(true);
                           try {
                             await adminFetch(`${import.meta.env.BASE_URL}api/bookings/auto-schedule`, {

@@ -280,6 +280,22 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
   res.json({ results, summary });
 });
 
+router.post("/bookings/apply-schedule", requireTeacherSession, async (req, res) => {
+  const { results } = req.body as {
+    results: Array<{ bookingId: number; assignedPriority: number | null; assignedTime: string | null }>;
+  };
+  if (!Array.isArray(results)) {
+    res.status(400).json({ message: "results must be an array" });
+    return;
+  }
+  for (const r of results) {
+    await db.update(bookingsTable)
+      .set({ assignedPriority: r.assignedPriority, assignedTime: r.assignedTime })
+      .where(eq(bookingsTable.id, r.bookingId));
+  }
+  res.json({ ok: true });
+});
+
 router.delete("/bookings/schedule", requireTeacherSession, async (_req, res) => {
   await db.update(bookingsTable).set({ assignedPriority: null, assignedTime: null });
   res.json({ ok: true });
