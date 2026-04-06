@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, teachersTable, timeSlotsTable } from "@workspace/db";
-import { eq, isNull } from "drizzle-orm";
+import { db, teachersTable, timeSlotsTable, bookingsTable } from "@workspace/db";
+import { eq, isNull, inArray } from "drizzle-orm";
 import { requireTeacherSession } from "./auth";
 
 const router = Router();
@@ -55,7 +55,15 @@ router.post("/teachers", async (req, res) => {
 
 router.delete("/teachers/me", requireTeacherSession, async (req, res) => {
   const teacherId = res.locals.teacherId as number;
-  await db.update(timeSlotsTable).set({ teacherId: null }).where(eq(timeSlotsTable.teacherId, teacherId));
+  const slots = await db
+    .select({ id: timeSlotsTable.id })
+    .from(timeSlotsTable)
+    .where(eq(timeSlotsTable.teacherId, teacherId));
+  if (slots.length) {
+    const slotIds = slots.map((s) => s.id);
+    await db.delete(bookingsTable).where(inArray(bookingsTable.timeSlotId, slotIds));
+    await db.delete(timeSlotsTable).where(inArray(timeSlotsTable.id, slotIds));
+  }
   await db.delete(teachersTable).where(eq(teachersTable.id, teacherId));
   res.clearCookie("teacher_session", { path: "/" });
   res.json({ ok: true });
