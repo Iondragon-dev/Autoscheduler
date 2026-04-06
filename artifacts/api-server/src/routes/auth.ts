@@ -16,11 +16,13 @@ declare global {
 const router = Router();
 
 const IS_PROD = process.env.NODE_ENV === "production";
-const SESSION_SECRET_FALLBACK = "timeslot-teacher-session-v1";
-if (!process.env.SESSION_SECRET && IS_PROD) {
-  console.warn("[auth] WARNING: SESSION_SECRET env var not set. Using insecure fallback — set SESSION_SECRET in production.");
+if (!process.env.SESSION_SECRET) {
+  if (IS_PROD) {
+    throw new Error("[auth] FATAL: SESSION_SECRET env var must be set in production. Set it to a strong random string (e.g. `openssl rand -hex 32`).");
+  }
+  console.warn("[auth] WARNING: SESSION_SECRET not set — using insecure dev fallback. Never do this in production.");
 }
-const SESSION_SECRET = process.env.SESSION_SECRET ?? SESSION_SECRET_FALLBACK;
+const SESSION_SECRET = process.env.SESSION_SECRET ?? "timeslot-teacher-session-dev-only";
 const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const COOKIE_OPTIONS = {
