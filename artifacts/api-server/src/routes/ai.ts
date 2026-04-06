@@ -298,7 +298,9 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
 
       const newlyAssigned = new Set<number>();
       for (const [posKey, bookingIds] of wants) {
-        const winner = bookingIds[0];
+        // Prefer the student who already holds this slot; otherwise use AI-determined order.
+        const currentHolder = bookingIds.find(id => allBookings.find((b) => b.id === id)?.assignedTime === posKey);
+        const winner = currentHolder ?? bookingIds[0];
         assignments.set(winner, { priority: round, time: posKey });
         assignedPositions.add(posKey);
         newlyAssigned.add(winner);
