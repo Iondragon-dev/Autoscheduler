@@ -4,6 +4,7 @@ import { Lock, AlertCircle, ArrowRight, Eye, EyeOff, UserPlus } from "lucide-rea
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 
 export const SESSION_KEY = "teacherAuth";
 
@@ -26,10 +27,11 @@ export function getTeacherInfo(): TeacherInfo | null {
 
 export function signOutTeacher() {
   sessionStorage.removeItem(SESSION_KEY);
-  fetch("/api/auth/teacher/logout", { method: "POST" }).catch(() => {});
+  fetch("/api/auth/teacher/logout", { method: "POST", credentials: "include" }).catch(() => {});
 }
 
 export default function TeacherGate({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [authed, setAuthed] = useState<boolean>(() => getTeacherInfo() !== null);
   const [slug, setSlug] = useState("");
   const [passcode, setPasscode] = useState("");
@@ -53,6 +55,7 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
       if (res.ok) {
         const info = await res.json() as TeacherInfo;
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(info));
+        queryClient.clear();
         setAuthed(true);
       } else {
         const data = await res.json().catch(() => ({})) as { message?: string };
