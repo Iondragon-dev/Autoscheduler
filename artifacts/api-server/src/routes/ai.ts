@@ -201,7 +201,6 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
   const bookingContext = allBookings.map((b) => ({
     bookingId: b.id,
     name: b.name,
-    email: b.email,
     submittedAt: b.createdAt,
     choice1: b.priority1,
     choice2: b.priority2,

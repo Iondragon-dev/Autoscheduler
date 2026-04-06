@@ -7,8 +7,12 @@ import { createHmac, timingSafeEqual } from "crypto";
 const router = Router();
 
 const PASSCODE_KEY = "teacher_passcode";
-const DEFAULT_PASSCODE = process.env.TEACHER_PASSCODE ?? "teacher123";
 const IS_PROD = process.env.NODE_ENV === "production";
+
+if (!process.env.TEACHER_PASSCODE && IS_PROD) {
+  console.warn("[auth] WARNING: TEACHER_PASSCODE env var not set. Using default passcode — set TEACHER_PASSCODE or change it via the teacher area before going live.");
+}
+const DEFAULT_PASSCODE = process.env.TEACHER_PASSCODE ?? "teacher123";
 
 const SESSION_SECRET_FALLBACK = "timeslot-teacher-session-v1";
 if (!process.env.SESSION_SECRET && IS_PROD) {
