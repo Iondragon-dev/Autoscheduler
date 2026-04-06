@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, timeSlotsTable, bookingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { CreateBookingBody, CreateTimeSlotBody, UpdateTimeSlotBody } from "@workspace/api-zod";
 import { requireTeacherSession } from "./auth";
 
@@ -170,16 +170,63 @@ router.post("/bookings", async (req, res) => {
     return;
   }
 
-  // Reject if any two priorities share the same slot + start time
+  // Parse and validate all priority strings
+  const toMins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+
+  const parsePrio = (p: string): { slotId: number; start: string; end: string } | null => {
+    if (!p.includes("|")) return null;
+    const [idStr, range] = p.split("|");
+    const dashIdx = range.indexOf("-");
+    if (dashIdx === -1) return null;
+    const start = range.slice(0, dashIdx);
+    const end = range.slice(dashIdx + 1);
+    const slotId = parseInt(idStr, 10);
+    if (isNaN(slotId)) return null;
+    return { slotId, start, end };
+  };
+
   const priorities = [priority1, priority2, priority3];
-  const slotStartKeys = priorities.map(p => {
-    if (!p) return null;
-    const pipeIdx = p.indexOf("|");
-    const dashIdx = p.indexOf("-", pipeIdx);
-    return pipeIdx === -1 ? p : p.slice(0, dashIdx === -1 ? undefined : dashIdx); // "slotId|startTime"
-  });
-  const uniqueKeys = new Set(slotStartKeys.filter(Boolean));
-  if (uniqueKeys.size < slotStartKeys.filter(Boolean).length) {
+  const parsedPrios = priorities.map(parsePrio);
+  if (parsedPrios.some(p => p === null)) {
+    res.status(400).json({ message: "Invalid preference format. Please go back and resubmit." });
+    return;
+  }
+
+  // Validate each priority against its referenced slot
+  const referencedSlotIds = [...new Set(parsedPrios.map(p => p!.slotId))];
+  const referencedSlots = await db.select().from(timeSlotsTable).where(
+    referencedSlotIds.length === 1
+      ? eq(timeSlotsTable.id, referencedSlotIds[0])
+      : inArray(timeSlotsTable.id, referencedSlotIds)
+  );
+  const slotMap = new Map(referencedSlots.map(s => [s.id, s]));
+
+  for (const prio of parsedPrios) {
+    const refSlot = slotMap.get(prio!.slotId);
+    if (!refSlot || !refSlot.available) {
+      res.status(400).json({ message: "One of your selected time slots no longer exists or is unavailable. Please go back and choose again." });
+      return;
+    }
+    const pStart = toMins(prio!.start);
+    const pEnd = toMins(prio!.end);
+    const sStart = toMins(refSlot.startTime);
+    const sEnd = toMins(refSlot.endTime);
+    if (pStart < sStart || pEnd > sEnd || pStart >= pEnd) {
+      res.status(400).json({ message: "One of your selected times is outside the allowed range. Please go back and choose again." });
+      return;
+    }
+    const blocked = (refSlot.blockedTimes ?? []);
+    const overlapsBlocked = blocked.some(b => toMins(b.start) < pEnd && toMins(b.end) > pStart);
+    if (overlapsBlocked) {
+      res.status(400).json({ message: "One of your selected times is no longer available. Please go back and choose again." });
+      return;
+    }
+  }
+
+  // Reject if any two priorities share the same slot + start time
+  const slotStartKeys = parsedPrios.map(p => `${p!.slotId}|${p!.start}`);
+  const uniqueKeys = new Set(slotStartKeys);
+  if (uniqueKeys.size < slotStartKeys.length) {
     res.status(400).json({ message: "Your 3 preferences must each be a different time. Please go back and choose distinct times." });
     return;
   }

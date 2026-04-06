@@ -8,8 +8,22 @@ const router = Router();
 
 const PASSCODE_KEY = "teacher_passcode";
 const DEFAULT_PASSCODE = process.env.TEACHER_PASSCODE ?? "teacher123";
-const SESSION_SECRET = process.env.SESSION_SECRET ?? "timeslot-teacher-session-v1";
+const IS_PROD = process.env.NODE_ENV === "production";
+
+const SESSION_SECRET_FALLBACK = "timeslot-teacher-session-v1";
+if (!process.env.SESSION_SECRET && IS_PROD) {
+  console.warn("[auth] WARNING: SESSION_SECRET env var not set. Using insecure fallback — set SESSION_SECRET in production.");
+}
+const SESSION_SECRET = process.env.SESSION_SECRET ?? SESSION_SECRET_FALLBACK;
 const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: "lax" as const,
+  maxAge: COOKIE_MAX_AGE_MS,
+  path: "/",
+  secure: IS_PROD,
+};
 
 async function getStoredPasscode(): Promise<string> {
   const row = await db
@@ -59,12 +73,7 @@ router.post("/auth/teacher", async (req, res) => {
     return;
   }
   const token = signPasscode(passcode);
-  res.cookie("teacher_session", token, {
-    httpOnly: true,
-    sameSite: "lax",
-    maxAge: COOKIE_MAX_AGE_MS,
-    path: "/",
-  });
+  res.cookie("teacher_session", token, COOKIE_OPTIONS);
   res.json({ ok: true });
 });
 
@@ -105,12 +114,7 @@ router.put("/auth/teacher/passcode", async (req, res) => {
     .onConflictDoUpdate({ target: settingsTable.key, set: { value: newPasscode } });
 
   const newToken = signPasscode(newPasscode);
-  res.cookie("teacher_session", newToken, {
-    httpOnly: true,
-    sameSite: "lax",
-    maxAge: COOKIE_MAX_AGE_MS,
-    path: "/",
-  });
+  res.cookie("teacher_session", newToken, COOKIE_OPTIONS);
   res.json({ ok: true });
 });
 
