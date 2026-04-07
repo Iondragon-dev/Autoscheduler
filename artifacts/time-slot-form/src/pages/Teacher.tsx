@@ -552,8 +552,10 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollBodyRef = useRef<HTMLDivElement>(null);
   const [showPanelScrollCue, setShowPanelScrollCue] = useState(false);
+  const dayNavLockedRef = useRef(false);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [step, aiMessage]);
+  useEffect(() => { dayNavLockedRef.current = false; }, [currentDayIndex, step]);
 
   useEffect(() => {
     const el = scrollBodyRef.current;
@@ -1208,8 +1210,10 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                           variant="outline"
                           className="flex-1"
                           onClick={() => {
+                            if (dayNavLockedRef.current) return;
+                            dayNavLockedRef.current = true;
                             if (isFirst) setStep("days");
-                            else setCurrentDayIndex((i) => i - 1);
+                            else setCurrentDayIndex((i) => Math.max(i - 1, 0));
                           }}
                         >
                           Back
@@ -1220,7 +1224,15 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                             <Sparkles className="w-4 h-4 ml-1.5" />
                           </Button>
                         ) : (
-                          <Button className="flex-1" onClick={() => setCurrentDayIndex((i) => i + 1)} disabled={!timeValid}>
+                          <Button
+                            className="flex-1"
+                            disabled={!timeValid}
+                            onClick={() => {
+                              if (dayNavLockedRef.current || !timeValid) return;
+                              dayNavLockedRef.current = true;
+                              setCurrentDayIndex((i) => Math.min(i + 1, orderedSelected.length - 1));
+                            }}
+                          >
                             Next — {orderedSelected[currentDayIndex + 1]}
                             <ArrowRight className="w-4 h-4 ml-1.5" />
                           </Button>
