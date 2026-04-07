@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertCircle, ArrowRight, ArrowLeft, Check,
@@ -105,6 +105,7 @@ export default function Home() {
   const [page, setPage] = useState(0);
   const [direction, setDirection] = useState(1);
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
+  const navLockedRef = useRef(false);
 
   const [choices, setChoices] = useState<Choice[]>([
     { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
@@ -192,8 +193,20 @@ export default function Home() {
     return false;
   };
 
-  const goNext = () => { setDirection(1); setPage(p => Math.min(p + 1, TOTAL_PAGES - 1)); };
-  const goBack = () => { setDirection(-1); setPage(p => Math.max(p - 1, 0)); };
+  useEffect(() => { navLockedRef.current = false; }, [page]);
+
+  const goNext = () => {
+    if (navLockedRef.current || !canGoNext()) return;
+    navLockedRef.current = true;
+    setDirection(1);
+    setPage(p => Math.min(p + 1, TOTAL_PAGES - 1));
+  };
+  const goBack = () => {
+    if (navLockedRef.current) return;
+    navLockedRef.current = true;
+    setDirection(-1);
+    setPage(p => Math.max(p - 1, 0));
+  };
 
   const handleSubmit = () => {
     const errs: typeof detailsErrors = {};
