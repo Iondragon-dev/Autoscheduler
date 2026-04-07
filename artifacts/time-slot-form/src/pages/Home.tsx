@@ -172,7 +172,7 @@ export default function Home() {
   };
 
   const canGoNext = (): boolean => {
-    if (isDetails) return false;
+    if (page >= TOTAL_PAGES - 1) return false;
     const c = choices[choiceIdx];
     if (subPage === 0) return c.slotId !== null;
     if (subPage === 1) {
@@ -192,8 +192,8 @@ export default function Home() {
     return false;
   };
 
-  const goNext = () => { setDirection(1); setPage(p => p + 1); };
-  const goBack = () => { setDirection(-1); setPage(p => p - 1); };
+  const goNext = () => { setDirection(1); setPage(p => Math.min(p + 1, TOTAL_PAGES - 1)); };
+  const goBack = () => { setDirection(-1); setPage(p => Math.max(p - 1, 0)); };
 
   const handleSubmit = () => {
     const errs: typeof detailsErrors = {};
