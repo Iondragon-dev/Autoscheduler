@@ -1,27 +1,37 @@
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { BookOpen, ArrowRight, UserPlus, Lock, ChevronRight } from "lucide-react";
-import { Link } from "wouter";
-
-interface TeacherEntry {
-  id: number;
-  name: string;
-  slug: string;
-  subject: string | null;
-}
+import { useState, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { BookOpen, ArrowRight, Lock, AlertCircle, Search } from "lucide-react";
+import { Link, useLocation } from "wouter";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export default function TeacherDirectory() {
-  const [teachers, setTeachers] = useState<TeacherEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, navigate] = useLocation();
+  const [slug, setSlug] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    fetch("/api/teachers")
-      .then(r => r.json())
-      .then((data: TeacherEntry[]) => setTeachers(data))
-      .catch(() => setError("Failed to load teachers. Please refresh."))
-      .finally(() => setLoading(false));
-  }, []);
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = slug.trim().toLowerCase();
+    if (!trimmed) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/teachers/${encodeURIComponent(trimmed)}/timeslots`);
+      if (res.ok) {
+        navigate(`/book/${trimmed}`);
+      } else {
+        setError("No teacher found with that URL name. Please check with your teacher.");
+        inputRef.current?.focus();
+      }
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="relative min-h-screen flex items-start justify-center py-12 px-4 overflow-hidden">
@@ -31,7 +41,7 @@ export default function TeacherDirectory() {
         className="fixed inset-0 w-full h-full object-cover opacity-60 mix-blend-multiply pointer-events-none"
       />
 
-      <div className="relative z-10 w-full max-w-lg mx-auto">
+      <div className="relative z-10 w-full max-w-md mx-auto">
         <div className="flex justify-end mb-3">
           <Link href="/teacher" className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
             Teacher Sign In →
@@ -51,69 +61,68 @@ export default function TeacherDirectory() {
               </div>
               <div>
                 <p className="text-xs font-semibold text-primary/70 uppercase tracking-widest">Session Booking</p>
-                <h1 className="text-xl font-bold text-foreground leading-tight">Choose Your Teacher</h1>
+                <h1 className="text-xl font-bold text-foreground leading-tight">Book a Session</h1>
               </div>
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              Select a teacher below to book a session with them.
+              Enter your teacher's URL name to get started.
             </p>
           </div>
 
-          <div className="px-6 sm:px-8 py-6">
-            {loading ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="h-16 rounded-xl bg-muted/50 animate-pulse" />
-                ))}
+          <div className="px-6 sm:px-8 py-7">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">
+                  Teacher URL name
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    ref={inputRef}
+                    type="text"
+                    placeholder="e.g. ms-smith"
+                    value={slug}
+                    onChange={(e) => {
+                      setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""));
+                      setError("");
+                    }}
+                    className="pl-9"
+                    autoFocus
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    error={!!error}
+                  />
+                </div>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Your teacher will give you their URL name.
+                </p>
               </div>
-            ) : error ? (
-              <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-                {error}
-              </div>
-            ) : teachers.length === 0 ? (
-              <div className="py-10 text-center text-muted-foreground text-sm space-y-3">
-                <p>No teachers have set up their booking yet.</p>
-                <Link href="/teacher/signup" className="inline-flex items-center gap-1.5 text-primary hover:text-primary/80 text-sm font-medium transition-colors">
-                  <UserPlus className="w-4 h-4" />
-                  Create the first teacher account
-                </Link>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {teachers.map((t, i) => (
-                  <motion.div
-                    key={t.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.06 }}
+
+              <AnimatePresence>
+                {error && (
+                  <motion.p
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="text-sm font-medium text-destructive flex items-start gap-1.5"
                   >
-                    <Link href={`/book/${t.slug}`}>
-                      <div className="group w-full flex items-center justify-between px-4 py-4 rounded-xl border-2 border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                            <span className="text-sm font-bold text-primary">
-                              {t.name.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                          <div>
-                            <div className="font-semibold text-foreground text-sm">{t.name}</div>
-                            {t.subject && (
-                              <div className="text-xs text-muted-foreground mt-0.5">{t.subject}</div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground group-hover:text-primary transition-colors font-medium">
-                            Book now
-                          </span>
-                          <ChevronRight className="w-4 h-4 text-muted-foreground/60 group-hover:text-primary transition-colors" />
-                        </div>
-                      </div>
-                    </Link>
-                  </motion.div>
-                ))}
-              </div>
-            )}
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    {error}
+                  </motion.p>
+                )}
+              </AnimatePresence>
+
+              <Button
+                type="submit"
+                className="w-full"
+                isLoading={loading}
+                disabled={!slug.trim()}
+              >
+                Book a Session
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </form>
           </div>
 
           <div className="px-6 sm:px-8 pb-6 pt-0 border-t border-border/30">
