@@ -29,13 +29,17 @@ router.get("/teachers/:slug/timeslots", async (req, res) => {
 });
 
 router.post("/teachers", async (req, res) => {
-  const { name, slug, passcode, subject } = req.body ?? {};
+  const { name, slug, passcode, subject, email } = req.body ?? {};
   if (!name?.trim() || !slug?.trim() || !passcode?.trim()) {
     res.status(400).json({ message: "name, slug, and passcode are required." });
     return;
   }
   if (!/^[a-z0-9-]+$/.test(slug)) {
     res.status(400).json({ message: "Slug must only contain lowercase letters, numbers, and hyphens." });
+    return;
+  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    res.status(400).json({ message: "Please enter a valid email address." });
     return;
   }
   const existing = await db.select({ id: teachersTable.id }).from(teachersTable).where(eq(teachersTable.slug, slug)).limit(1);
@@ -45,7 +49,7 @@ router.post("/teachers", async (req, res) => {
   }
   const [teacher] = await db
     .insert(teachersTable)
-    .values({ name: name.trim(), slug: slug.trim(), passcode: passcode.trim(), subject: subject?.trim() || null })
+    .values({ name: name.trim(), slug: slug.trim(), passcode: passcode.trim(), subject: subject?.trim() || null, email: email?.trim() || null })
     .returning();
 
   await db.update(timeSlotsTable).set({ teacherId: teacher.id }).where(isNull(timeSlotsTable.teacherId));

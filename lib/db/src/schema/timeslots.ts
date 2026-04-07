@@ -8,6 +8,7 @@ export const teachersTable = pgTable("teachers", {
   slug: text("slug").notNull().unique(),
   passcode: text("passcode").notNull(),
   subject: text("subject"),
+  email: text("email"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

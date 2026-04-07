@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { GraduationCap, AlertCircle, ArrowRight, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { GraduationCap, AlertCircle, ArrowRight, Eye, EyeOff, CheckCircle2, Mail } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
@@ -11,6 +11,7 @@ export default function TeacherSignup() {
   const [slug, setSlug] = useState("");
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [subject, setSubject] = useState("");
+  const [email, setEmail] = useState("");
   const [passcode, setPasscode] = useState("");
   const [confirmPasscode, setConfirmPasscode] = useState("");
   const [showPasscode, setShowPasscode] = useState(false);
@@ -50,7 +51,7 @@ export default function TeacherSignup() {
       const res = await fetch("/api/teachers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), slug: slug.trim(), passcode, subject: subject.trim() || undefined }),
+        body: JSON.stringify({ name: name.trim(), slug: slug.trim(), passcode, subject: subject.trim() || undefined, email: email.trim() || undefined }),
       });
       const data = await res.json() as { message?: string };
       if (!res.ok) {
@@ -147,6 +148,25 @@ export default function TeacherSignup() {
                       onChange={e => setSubject(e.target.value)}
                       maxLength={60}
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                      Recovery Email (optional)
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      <Input
+                        type="email"
+                        placeholder="you@example.com"
+                        value={email}
+                        onChange={e => setEmail(e.target.value)}
+                        className="pl-9"
+                        autoComplete="email"
+                        maxLength={254}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">Used if you ever need to recover your passcode.</p>
                   </div>
 
                   <div>
