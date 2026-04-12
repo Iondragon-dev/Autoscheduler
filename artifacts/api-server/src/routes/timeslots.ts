@@ -306,22 +306,37 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
     priorities: [b.priority1, b.priority2, b.priority3].map(parsePriority),
   }));
 
-  // Sort by number of non-null valid priorities (ascending) so less-flexible students
-  // are processed first — maximises total assignments. Stable sort preserves submission
-  // order within the same flexibility level.
-  const validCount = (entry: typeof bookingParsed[0]) =>
-    entry.priorities.filter(p => p !== null && allSlots.some(s => s.id === p!.slotId)).length;
-  const sorted = [...bookingParsed].sort((a, b) => validCount(a) - validCount(b));
-
   const assignments = new Map<number, { priority: number; time: string }>();
+  const unassigned = new Set(bookingParsed.map(b => b.bookingId));
 
-  for (const { bookingId, priorities } of sorted) {
-    for (let i = 0; i < priorities.length; i++) {
-      const p = priorities[i];
+  // Each iteration: pick the student whose options are most constrained RIGHT NOW
+  // (fewest currently-available preferences). This dynamically re-evaluates as slots
+  // fill up, so a student whose fallbacks got taken is prioritised over someone who
+  // still has many open choices. Ties broken by original submission order.
+  while (unassigned.size > 0) {
+    let bestEntry: typeof bookingParsed[0] | null = null;
+    let bestAvail = Infinity;
+
+    for (const entry of bookingParsed) {
+      if (!unassigned.has(entry.bookingId)) continue;
+      const avail = entry.priorities.filter(
+        p => p !== null &&
+             allSlots.some(s => s.id === p!.slotId) &&
+             !overlapsAssigned(p!.slotId, p!.startMins, p!.endMins)
+      ).length;
+      if (avail < bestAvail) { bestAvail = avail; bestEntry = entry; }
+    }
+
+    if (!bestEntry) break;
+    unassigned.delete(bestEntry.bookingId);
+    if (bestAvail === 0) continue; // No available slot for this student
+
+    for (let i = 0; i < bestEntry.priorities.length; i++) {
+      const p = bestEntry.priorities[i];
       if (!p) continue;
       if (!allSlots.find(s => s.id === p.slotId)) continue;
       if (overlapsAssigned(p.slotId, p.startMins, p.endMins)) continue;
-      assignments.set(bookingId, { priority: i + 1, time: p.key });
+      assignments.set(bestEntry.bookingId, { priority: i + 1, time: p.key });
       markAssigned(p.slotId, p.startMins, p.endMins);
       break;
     }
