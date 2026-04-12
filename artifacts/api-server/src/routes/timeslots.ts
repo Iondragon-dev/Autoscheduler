@@ -300,33 +300,31 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
     assignedBySlot.get(slotId)!.push({ start, end });
   };
 
-  const assignments = new Map<number, { priority: number; time: string }>();
-  let unassigned = allBookings.map(b => b.id);
+  // Parse all three priorities for each booking up front
+  const bookingParsed = allBookings.map(b => ({
+    bookingId: b.id,
+    priorities: [b.priority1, b.priority2, b.priority3].map(parsePriority),
+  }));
 
-  for (let round = 1; round <= 3; round++) {
-    const wants = new Map<string, Array<{ bookingId: number; slotId: number; startMins: number; endMins: number }>>();
-    for (const bookingId of unassigned) {
-      const booking = allBookings.find(b => b.id === bookingId)!;
-      const p = round === 1 ? booking.priority1 : round === 2 ? booking.priority2 : booking.priority3;
-      const parsed = parsePriority(p);
-      if (!parsed) continue;
-      if (!allSlots.find(s => s.id === parsed.slotId)) continue;
-      if (overlapsAssigned(parsed.slotId, parsed.startMins, parsed.endMins)) continue;
-      if (!wants.has(parsed.key)) wants.set(parsed.key, []);
-      wants.get(parsed.key)!.push({ bookingId, slotId: parsed.slotId, startMins: parsed.startMins, endMins: parsed.endMins });
+  // Sort by number of non-null valid priorities (ascending) so less-flexible students
+  // are processed first — maximises total assignments. Stable sort preserves submission
+  // order within the same flexibility level.
+  const validCount = (entry: typeof bookingParsed[0]) =>
+    entry.priorities.filter(p => p !== null && allSlots.some(s => s.id === p!.slotId)).length;
+  const sorted = [...bookingParsed].sort((a, b) => validCount(a) - validCount(b));
+
+  const assignments = new Map<number, { priority: number; time: string }>();
+
+  for (const { bookingId, priorities } of sorted) {
+    for (let i = 0; i < priorities.length; i++) {
+      const p = priorities[i];
+      if (!p) continue;
+      if (!allSlots.find(s => s.id === p.slotId)) continue;
+      if (overlapsAssigned(p.slotId, p.startMins, p.endMins)) continue;
+      assignments.set(bookingId, { priority: i + 1, time: p.key });
+      markAssigned(p.slotId, p.startMins, p.endMins);
+      break;
     }
-    const newlyAssigned = new Set<number>();
-    for (const [posKey, candidates] of wants) {
-      // Re-check overlap: another posKey in this same round may have just claimed an overlapping window
-      if (overlapsAssigned(candidates[0].slotId, candidates[0].startMins, candidates[0].endMins)) continue;
-      const currentHolder = candidates.find(c => allBookings.find(b => b.id === c.bookingId)?.assignedTime === posKey);
-      const winner = currentHolder ?? candidates[0];
-      assignments.set(winner.bookingId, { priority: round, time: posKey });
-      markAssigned(winner.slotId, winner.startMins, winner.endMins);
-      newlyAssigned.add(winner.bookingId);
-    }
-    unassigned = unassigned.filter(id => !newlyAssigned.has(id));
-    if (unassigned.length === 0) break;
   }
 
   const results = allBookings.map(b => {
