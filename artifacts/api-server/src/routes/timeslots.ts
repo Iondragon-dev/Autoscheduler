@@ -276,37 +276,54 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
     ? await db.select().from(bookingsTable).where(inArray(bookingsTable.timeSlotId, slotIds)).orderBy(bookingsTable.createdAt)
     : [];
 
+  const schedulerToMins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m ?? 0); };
+
   const parsePriority = (p: string | null | undefined) => {
     if (!p || !p.includes("|")) return null;
     const pipeIdx = p.indexOf("|");
     const slotId = parseInt(p.slice(0, pipeIdx));
     if (isNaN(slotId)) return null;
-    return { slotId, key: p };
+    const range = p.slice(pipeIdx + 1);
+    const dashIdx = range.indexOf("-");
+    if (dashIdx === -1) return null;
+    const startMins = schedulerToMins(range.slice(0, dashIdx));
+    const endMins = schedulerToMins(range.slice(dashIdx + 1));
+    return { slotId, startMins, endMins, key: p };
   };
 
-  const assignedPositions = new Set<string>();
+  // Track assigned intervals per slot so overlap (not just exact match) is detected
+  const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
+  const overlapsAssigned = (slotId: number, start: number, end: number) =>
+    (assignedBySlot.get(slotId) ?? []).some(iv => start < iv.end && end > iv.start);
+  const markAssigned = (slotId: number, start: number, end: number) => {
+    if (!assignedBySlot.has(slotId)) assignedBySlot.set(slotId, []);
+    assignedBySlot.get(slotId)!.push({ start, end });
+  };
+
   const assignments = new Map<number, { priority: number; time: string }>();
   let unassigned = allBookings.map(b => b.id);
 
   for (let round = 1; round <= 3; round++) {
-    const wants = new Map<string, number[]>();
+    const wants = new Map<string, Array<{ bookingId: number; slotId: number; startMins: number; endMins: number }>>();
     for (const bookingId of unassigned) {
       const booking = allBookings.find(b => b.id === bookingId)!;
       const p = round === 1 ? booking.priority1 : round === 2 ? booking.priority2 : booking.priority3;
       const parsed = parsePriority(p);
       if (!parsed) continue;
       if (!allSlots.find(s => s.id === parsed.slotId)) continue;
-      if (assignedPositions.has(parsed.key)) continue;
+      if (overlapsAssigned(parsed.slotId, parsed.startMins, parsed.endMins)) continue;
       if (!wants.has(parsed.key)) wants.set(parsed.key, []);
-      wants.get(parsed.key)!.push(bookingId);
+      wants.get(parsed.key)!.push({ bookingId, slotId: parsed.slotId, startMins: parsed.startMins, endMins: parsed.endMins });
     }
     const newlyAssigned = new Set<number>();
-    for (const [posKey, bookingIds] of wants) {
-      const currentHolder = bookingIds.find(id => allBookings.find(b => b.id === id)?.assignedTime === posKey);
-      const winner = currentHolder ?? bookingIds[0];
-      assignments.set(winner, { priority: round, time: posKey });
-      assignedPositions.add(posKey);
-      newlyAssigned.add(winner);
+    for (const [posKey, candidates] of wants) {
+      // Re-check overlap: another posKey in this same round may have just claimed an overlapping window
+      if (overlapsAssigned(candidates[0].slotId, candidates[0].startMins, candidates[0].endMins)) continue;
+      const currentHolder = candidates.find(c => allBookings.find(b => b.id === c.bookingId)?.assignedTime === posKey);
+      const winner = currentHolder ?? candidates[0];
+      assignments.set(winner.bookingId, { priority: round, time: posKey });
+      markAssigned(winner.slotId, winner.startMins, winner.endMins);
+      newlyAssigned.add(winner.bookingId);
     }
     unassigned = unassigned.filter(id => !newlyAssigned.has(id));
     if (unassigned.length === 0) break;
