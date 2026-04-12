@@ -208,6 +208,22 @@ export default function Home() {
     setPage(p => Math.max(p - 1, 0));
   };
 
+  const handleStartOver = () => {
+    setConfirmedBooking(null);
+    setPage(0);
+    setDirection(1);
+    setChoices([
+      { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
+      { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
+      { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
+    ]);
+    setName("");
+    setEmail("");
+    setDetailsErrors({});
+    setSubmitError(null);
+    navLockedRef.current = false;
+  };
+
   const handleSubmit = () => {
     const errs: typeof detailsErrors = {};
     if (!name.trim()) errs.name = "Name is required";
@@ -864,6 +880,20 @@ export default function Home() {
               >
                 The teacher will review your preferences and confirm a time.
               </motion.p>
+
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.7 }}
+                className="mt-6"
+              >
+                <button
+                  onClick={handleStartOver}
+                  className="text-sm font-semibold text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+                >
+                  Submit another request
+                </button>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
