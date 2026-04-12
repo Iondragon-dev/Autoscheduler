@@ -44,7 +44,7 @@ router.post("/teachers", async (req, res) => {
   }
   const existing = await db.select({ id: teachersTable.id }).from(teachersTable).where(eq(teachersTable.slug, slug)).limit(1);
   if (existing.length) {
-    res.status(409).json({ message: "That URL name is already taken. Please choose a different one." });
+    res.status(409).json({ message: "That username is already taken. Please choose a different one." });
     return;
   }
   const [teacher] = await db

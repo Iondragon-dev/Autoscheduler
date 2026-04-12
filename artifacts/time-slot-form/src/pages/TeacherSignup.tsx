@@ -40,8 +40,8 @@ export default function TeacherSignup() {
     setError("");
 
     if (!name.trim()) { setError("Full name is required."); return; }
-    if (!slug.trim()) { setError("URL name is required."); return; }
-    if (!/^[a-z0-9-]+$/.test(slug)) { setError("URL name can only contain lowercase letters, numbers, and hyphens."); return; }
+    if (!slug.trim()) { setError("Username is required."); return; }
+    if (!/^[a-z0-9-]+$/.test(slug)) { setError("Username can only contain lowercase letters, numbers, and hyphens."); return; }
     if (!passcode.trim()) { setError("Passcode is required."); return; }
     if (passcode.length < 4) { setError("Passcode must be at least 4 characters."); return; }
     if (passcode !== confirmPasscode) { setError("Passcodes don't match."); return; }
@@ -121,7 +121,7 @@ export default function TeacherSignup() {
 
                   <div>
                     <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
-                      URL Name <span className="text-destructive">*</span>
+                      Username <span className="text-destructive">*</span>
                     </label>
                     <Input
                       type="text"

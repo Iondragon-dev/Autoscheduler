@@ -94,12 +94,12 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
           </div>
 
           <h1 className="text-2xl font-display font-bold text-foreground mb-1">Teacher Sign In</h1>
-          <p className="text-sm text-muted-foreground mb-7">Enter your URL name and passcode to continue.</p>
+          <p className="text-sm text-muted-foreground mb-7">Enter your username and passcode to continue.</p>
 
           <form onSubmit={handleSubmit} className="space-y-3 text-left">
             <Input
               type="text"
-              placeholder="URL name (e.g. ms-smith)"
+              placeholder="Username (e.g. ms-smith)"
               value={slug}
               onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
               autoFocus

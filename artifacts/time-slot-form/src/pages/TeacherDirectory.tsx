@@ -23,7 +23,7 @@ export default function TeacherDirectory() {
       if (res.ok) {
         navigate(`/book/${trimmed}`);
       } else {
-        setError("No teacher found with that URL name. Please check with your teacher.");
+        setError("No teacher found with that username. Please check with your teacher.");
         inputRef.current?.focus();
       }
     } catch {
@@ -65,7 +65,7 @@ export default function TeacherDirectory() {
               </div>
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              Enter your teacher's URL name to get started.
+              Enter your teacher's username to get started.
             </p>
           </div>
 
@@ -73,7 +73,7 @@ export default function TeacherDirectory() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-foreground mb-2">
-                  Teacher URL name
+                  Teacher username
                 </label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -95,7 +95,7 @@ export default function TeacherDirectory() {
                   />
                 </div>
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  Your teacher will give you their URL name.
+                  Your teacher will give you their username.
                 </p>
               </div>
 
