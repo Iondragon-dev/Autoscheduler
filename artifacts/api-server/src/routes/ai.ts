@@ -157,15 +157,23 @@ router.post("/ai/block", requireTeacherSession, async (req, res) => {
 
 const AUTO_SCHEDULE_SYSTEM_PROMPT = `You are a scheduling assistant that interprets teacher preferences and converts them into a student priority ordering for an auto-scheduling algorithm.
 
+Scoring system (higher is better):
+- 1st choice assigned → +3 points
+- 2nd choice assigned → +2 points
+- 3rd choice assigned → +1 point
+- Unassigned → -6 points
+Goal: maximise total score across all students.
+
 How the algorithm works:
 - Students submitted 3 ranked time preferences (1st, 2nd, 3rd choice).
-- The algorithm runs 3 rounds, assigning each student to their highest available preference.
-- When multiple students want the same slot, the student listed FIRST in the priority order wins.
+- The algorithm processes students in the order you specify.
+- When multiple students compete for the same slot, the student listed FIRST in your priority order wins.
+- A student left unassigned costs -6 points — far worse than giving them a 3rd choice (+1). Ordering matters most for tie-breaking; the algorithm already tries to minimise unassigned students.
 - By default, students who submitted earlier are listed first (first-come, first-served).
 
 Your task:
 1. Read the teacher's preferences carefully.
-2. In 2-3 sentences, explain how you are interpreting the preferences and what you are adjusting.
+2. In 2-3 sentences, explain how you are interpreting the preferences and what ordering you chose to maximise the score.
 3. Output a SCHEDULE_PARAMS block in EXACTLY this format:
 
 <SCHEDULE_PARAMS>
@@ -273,45 +281,74 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
       return ai - bi;
     });
 
-    // Greedy algorithm with AI-ordered students
+    // Scoring: 1st=3, 2nd=2, 3rd=1, unassigned=-6
+    const PRIORITY_SCORE: Record<number, number> = { 1: 3, 2: 2, 3: 1 };
+
+    // Greedy: constrained-first (fewest distinct days → fewest available → AI order for ties)
+    // Includes overlap detection so two students can't get the same time window.
+    const toMinsAi = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m ?? 0); };
     const parsePriority = (p: string | null | undefined) => {
       if (!p || !p.includes("|")) return null;
       const pipeIdx = p.indexOf("|");
       const slotId = parseInt(p.slice(0, pipeIdx));
       if (isNaN(slotId)) return null;
-      return { slotId, key: p };
+      const range = p.slice(pipeIdx + 1);
+      const dashIdx = range.indexOf("-");
+      if (dashIdx === -1) return null;
+      const startMins = toMinsAi(range.slice(0, dashIdx));
+      const endMins = toMinsAi(range.slice(dashIdx + 1));
+      return { slotId, startMins, endMins, key: p };
     };
 
-    const assignedPositions = new Set<string>();
+    const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
+    const overlapsAssigned = (slotId: number, start: number, end: number) =>
+      (assignedBySlot.get(slotId) ?? []).some(iv => start < iv.end && end > iv.start);
+    const markAssigned = (slotId: number, start: number, end: number) => {
+      if (!assignedBySlot.has(slotId)) assignedBySlot.set(slotId, []);
+      assignedBySlot.get(slotId)!.push({ start, end });
+    };
+
+    // Parse priorities in AI-determined order (tie-breaking uses this order)
+    const bookingParsed = sortedBookings.map(b => ({
+      bookingId: b.id,
+      priorities: [b.priority1, b.priority2, b.priority3].map(parsePriority),
+    }));
+
     const assignments = new Map<number, { priority: number; time: string }>();
-    let unassigned = sortedBookings.map((b) => b.id);
+    const unassigned = new Set(bookingParsed.map(b => b.bookingId));
 
-    for (let round = 1; round <= 3; round++) {
-      const wants = new Map<string, number[]>();
+    while (unassigned.size > 0) {
+      let bestEntry: typeof bookingParsed[0] | null = null;
+      let bestDays = Infinity;
+      let bestAvail = Infinity;
 
-      for (const bookingId of unassigned) {
-        const booking = sortedBookings.find((b) => b.id === bookingId)!;
-        const p = round === 1 ? booking.priority1 : round === 2 ? booking.priority2 : booking.priority3;
-        const parsed = parsePriority(p);
-        if (!parsed) continue;
-        if (!allSlots.find((s) => s.id === parsed.slotId)) continue;
-        if (assignedPositions.has(parsed.key)) continue;
-        if (!wants.has(parsed.key)) wants.set(parsed.key, []);
-        wants.get(parsed.key)!.push(bookingId);
+      for (const entry of bookingParsed) {
+        if (!unassigned.has(entry.bookingId)) continue;
+        const availPriorities = entry.priorities.filter(
+          p => p !== null &&
+               allSlots.some(s => s.id === p!.slotId) &&
+               !overlapsAssigned(p!.slotId, p!.startMins, p!.endMins)
+        ) as NonNullable<ReturnType<typeof parsePriority>>[];
+        const avail = availPriorities.length;
+        const days = new Set(availPriorities.map(p => allSlots.find(s => s.id === p.slotId)?.label ?? p.slotId)).size;
+        if (days < bestDays || (days === bestDays && avail < bestAvail)) {
+          bestDays = days; bestAvail = avail; bestEntry = entry;
+        }
       }
 
-      const newlyAssigned = new Set<number>();
-      for (const [posKey, bookingIds] of wants) {
-        // Prefer the student who already holds this slot; otherwise use AI-determined order.
-        const currentHolder = bookingIds.find(id => allBookings.find((b) => b.id === id)?.assignedTime === posKey);
-        const winner = currentHolder ?? bookingIds[0];
-        assignments.set(winner, { priority: round, time: posKey });
-        assignedPositions.add(posKey);
-        newlyAssigned.add(winner);
-      }
+      if (!bestEntry) break;
+      unassigned.delete(bestEntry.bookingId);
+      if (bestAvail === 0) continue;
 
-      unassigned = unassigned.filter((id) => !newlyAssigned.has(id));
-      if (unassigned.length === 0) break;
+      for (let i = 0; i < bestEntry.priorities.length; i++) {
+        const p = bestEntry.priorities[i];
+        if (!p) continue;
+        if (!allSlots.find(s => s.id === p.slotId)) continue;
+        if (overlapsAssigned(p.slotId, p.startMins, p.endMins)) continue;
+        assignments.set(bestEntry.bookingId, { priority: i + 1, time: p.key });
+        markAssigned(p.slotId, p.startMins, p.endMins);
+        break;
+      }
     }
 
     // Build results
@@ -321,6 +358,13 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
       const slotId = a && pipeIdx >= 0 ? parseInt(a.time.slice(0, pipeIdx)) : null;
       const timeRange = a && pipeIdx >= 0 ? a.time.slice(pipeIdx + 1) : null;
       const slot = slotId != null ? allSlots.find((s) => s.id === slotId) : null;
+      const parsedEntry = bookingParsed.find(bp => bp.bookingId === b.id);
+      const preferences = (parsedEntry?.priorities ?? []).map((p, i) => {
+        if (!p) return null;
+        const prefSlot = allSlots.find(s => s.id === p.slotId);
+        if (!prefSlot) return null;
+        return { priority: i + 1, slotLabel: prefSlot.label, timeRange: p.key.slice(p.key.indexOf("|") + 1), assignedTime: p.key };
+      }).filter((p): p is NonNullable<typeof p> => p !== null);
       return {
         bookingId: b.id,
         name: b.name,
@@ -329,6 +373,7 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
         assignedSlotLabel: slot?.label ?? null,
         assignedTimeRange: timeRange,
         assignedTime: a?.time ?? null,
+        preferences,
       };
     });
 
@@ -340,12 +385,14 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
       }
     }
 
+    const totalScore = results.reduce((acc, r) => acc + (r.assignedPriority != null ? (PRIORITY_SCORE[r.assignedPriority] ?? 0) : -6), 0);
     const summary = {
       total: results.length,
       got1st: results.filter((r) => r.assignedPriority === 1).length,
       got2nd: results.filter((r) => r.assignedPriority === 2).length,
       got3rd: results.filter((r) => r.assignedPriority === 3).length,
       unassigned: results.filter((r) => r.assignedPriority === null).length,
+      totalScore,
     };
 
     res.write(`data: ${JSON.stringify({ schedule: { results, summary, reasoning } })}\n\n`);

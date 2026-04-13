@@ -384,12 +384,15 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
     }
   }
 
+  const PRIORITY_SCORE: Record<number, number> = { 1: 3, 2: 2, 3: 1 };
+  const totalScore = results.reduce((acc, r) => acc + (r.assignedPriority != null ? (PRIORITY_SCORE[r.assignedPriority] ?? 0) : -6), 0);
   const summary = {
     total: results.length,
     got1st: results.filter(r => r.assignedPriority === 1).length,
     got2nd: results.filter(r => r.assignedPriority === 2).length,
     got3rd: results.filter(r => r.assignedPriority === 3).length,
     unassigned: results.filter(r => r.assignedPriority === null).length,
+    totalScore,
   };
 
   res.json({ results, summary });

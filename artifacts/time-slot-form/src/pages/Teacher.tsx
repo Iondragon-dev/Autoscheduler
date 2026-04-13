@@ -2009,7 +2009,7 @@ export default function Teacher() {
     assignedTimeRange: string | null; assignedTime: string | null;
     preferences: SchedulePref[];
   };
-  type ScheduleSummary = { total: number; got1st: number; got2nd: number; got3rd: number; unassigned: number };
+  type ScheduleSummary = { total: number; got1st: number; got2nd: number; got3rd: number; unassigned: number; totalScore: number };
   const [schedulePreview, setSchedulePreview] = useState<ScheduleResult[] | null>(null);
   const [scheduleSummary, setScheduleSummary] = useState<ScheduleSummary | null>(null);
   const [isScheduling, setIsScheduling] = useState(false);
@@ -2030,12 +2030,14 @@ export default function Teacher() {
     const ov = editOverrides[r.bookingId];
     return ov !== undefined ? { ...r, ...ov } : r;
   }) ?? null;
+  const PRIORITY_SCORE: Record<number, number> = { 1: 3, 2: 2, 3: 1 };
   const effectiveSummary = effectivePreview ? {
     total: effectivePreview.length,
     got1st: effectivePreview.filter(r => r.assignedPriority === 1).length,
     got2nd: effectivePreview.filter(r => r.assignedPriority === 2).length,
     got3rd: effectivePreview.filter(r => r.assignedPriority === 3).length,
     unassigned: effectivePreview.filter(r => r.assignedPriority === null).length,
+    totalScore: effectivePreview.reduce((acc, r) => acc + (r.assignedPriority != null ? (PRIORITY_SCORE[r.assignedPriority] ?? 0) : -6), 0),
   } : null;
   const hasUnsavedEdits = Object.keys(editOverrides).length > 0;
 
@@ -2634,6 +2636,9 @@ export default function Teacher() {
                           {b.value} got {b.label}
                         </span>
                       ))}
+                      <span className={cn("text-xs font-semibold px-3 py-1 rounded-full border", effectiveSummary.totalScore >= 0 ? "bg-violet-500/15 text-violet-700 border-violet-500/30" : "bg-red-500/15 text-red-700 border-red-500/30")}>
+                        Score: {effectiveSummary.totalScore > 0 ? "+" : ""}{effectiveSummary.totalScore}
+                      </span>
                       <span className="text-xs text-muted-foreground self-center ml-1">
                         {hasUnsavedEdits ? "· Edited — not saved yet" : scheduleApplied ? "· Schedule applied to database" : "· Preview only — not saved yet"}
                       </span>
