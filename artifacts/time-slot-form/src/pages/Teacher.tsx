@@ -11,7 +11,7 @@ import {
   Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft,
   AlertCircle, Calendar, ChevronDown, Mail, User, Sparkles, X,
   Bot, CheckCircle2, ArrowRight, Loader2, KeyRound, Eye, EyeOff, Ban, Upload,
-  Wand2, CheckCheck, RotateCcw, TriangleAlert,
+  Wand2, CheckCheck, RotateCcw, TriangleAlert, Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2002,10 +2002,12 @@ export default function Teacher() {
     return () => { clearTimeout(t); window.removeEventListener("scroll", check); window.removeEventListener("resize", check); };
   }, [tab]);
 
+  type SchedulePref = { priority: number; slotLabel: string; timeRange: string; assignedTime: string };
   type ScheduleResult = {
     bookingId: number; name: string; email: string;
     assignedPriority: number | null; assignedSlotLabel: string | null;
     assignedTimeRange: string | null; assignedTime: string | null;
+    preferences: SchedulePref[];
   };
   type ScheduleSummary = { total: number; got1st: number; got2nd: number; got3rd: number; unassigned: number };
   const [schedulePreview, setSchedulePreview] = useState<ScheduleResult[] | null>(null);
@@ -2020,6 +2022,22 @@ export default function Teacher() {
   const [aiReasoning, setAiReasoning] = useState<string | null>(null);
   const [aiReasoningSummary, setAiReasoningSummary] = useState<string | null>(null);
   const [scheduleIsAiGenerated, setScheduleIsAiGenerated] = useState(false);
+  type EditOverride = { assignedPriority: number | null; assignedTime: string | null; assignedSlotLabel: string | null; assignedTimeRange: string | null };
+  const [editOverrides, setEditOverrides] = useState<Record<number, EditOverride>>({});
+  const [editingRow, setEditingRow] = useState<number | null>(null);
+
+  const effectivePreview = schedulePreview?.map(r => {
+    const ov = editOverrides[r.bookingId];
+    return ov !== undefined ? { ...r, ...ov } : r;
+  }) ?? null;
+  const effectiveSummary = effectivePreview ? {
+    total: effectivePreview.length,
+    got1st: effectivePreview.filter(r => r.assignedPriority === 1).length,
+    got2nd: effectivePreview.filter(r => r.assignedPriority === 2).length,
+    got3rd: effectivePreview.filter(r => r.assignedPriority === 3).length,
+    unassigned: effectivePreview.filter(r => r.assignedPriority === null).length,
+  } : null;
+  const hasUnsavedEdits = Object.keys(editOverrides).length > 0;
 
   const handleAiSchedule = async () => {
     if (!aiPreferences.trim() || isAiScheduling) return;
@@ -2030,6 +2048,8 @@ export default function Teacher() {
     setScheduleIsAiGenerated(false);
     setSchedulePreview(null);
     setScheduleSummary(null);
+    setEditOverrides({});
+    setEditingRow(null);
     try {
       const res = await adminFetch(`${import.meta.env.BASE_URL}api/ai/auto-schedule`, {
         method: "POST",
@@ -2566,6 +2586,8 @@ export default function Teacher() {
                       setAiReasoning(null);
                       setAiReasoningSummary(null);
                       setScheduleIsAiGenerated(false);
+                      setEditOverrides({});
+                      setEditingRow(null);
                       try {
                         const res = await adminFetch(`${import.meta.env.BASE_URL}api/bookings/auto-schedule`, {
                           method: "POST",
@@ -2593,7 +2615,7 @@ export default function Teacher() {
                   </div>
                 )}
 
-                {scheduleSummary && schedulePreview && (
+                {effectiveSummary && effectivePreview && (
                   <>
                     {/* Summary badges */}
                     <div className="flex flex-wrap gap-2">
@@ -2603,17 +2625,17 @@ export default function Teacher() {
                         </span>
                       )}
                       {[
-                        { label: "1st choice", value: scheduleSummary.got1st, color: "bg-green-500/15 text-green-700 border-green-500/30" },
-                        { label: "2nd choice", value: scheduleSummary.got2nd, color: "bg-blue-500/15 text-blue-700 border-blue-500/30" },
-                        { label: "3rd choice", value: scheduleSummary.got3rd, color: "bg-amber-500/15 text-amber-700 border-amber-500/30" },
-                        { label: "Unassigned", value: scheduleSummary.unassigned, color: "bg-red-500/15 text-red-700 border-red-500/30" },
+                        { label: "1st choice", value: effectiveSummary.got1st, color: "bg-green-500/15 text-green-700 border-green-500/30" },
+                        { label: "2nd choice", value: effectiveSummary.got2nd, color: "bg-blue-500/15 text-blue-700 border-blue-500/30" },
+                        { label: "3rd choice", value: effectiveSummary.got3rd, color: "bg-amber-500/15 text-amber-700 border-amber-500/30" },
+                        { label: "Unassigned", value: effectiveSummary.unassigned, color: "bg-red-500/15 text-red-700 border-red-500/30" },
                       ].map(b => (
                         <span key={b.label} className={cn("text-xs font-semibold px-3 py-1 rounded-full border", b.color)}>
                           {b.value} got {b.label}
                         </span>
                       ))}
                       <span className="text-xs text-muted-foreground self-center ml-1">
-                        {scheduleApplied ? "· Schedule applied to database" : "· Preview only — not saved yet"}
+                        {hasUnsavedEdits ? "· Edited — not saved yet" : scheduleApplied ? "· Schedule applied to database" : "· Preview only — not saved yet"}
                       </span>
                     </div>
 
@@ -2634,10 +2656,12 @@ export default function Teacher() {
                             <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Assigned Slot</th>
                             <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Time</th>
                             <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Got</th>
+                            <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Edit</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
-                          {schedulePreview.map((r, i) => {
+                          {effectivePreview.map((r, i) => {
+                            const originalRow = schedulePreview!.find(s => s.bookingId === r.bookingId)!;
                             const [tStart, tEnd] = (r.assignedTimeRange ?? "").split("-");
                             const priorityLabels: Record<number, { label: string; cls: string }> = {
                               1: { label: "1st", cls: "bg-green-500/15 text-green-700 border-green-500/30" },
@@ -2645,25 +2669,71 @@ export default function Teacher() {
                               3: { label: "3rd", cls: "bg-amber-500/15 text-amber-700 border-amber-500/30" },
                             };
                             const badge = r.assignedPriority ? priorityLabels[r.assignedPriority] : null;
+                            const isEditing = editingRow === r.bookingId;
+                            const isOverridden = editOverrides[r.bookingId] !== undefined;
                             return (
-                              <tr key={r.bookingId} className={cn("transition-colors", i % 2 === 0 ? "bg-background/40" : "bg-background/20")}>
+                              <tr key={r.bookingId} className={cn("transition-colors", i % 2 === 0 ? "bg-background/40" : "bg-background/20", isOverridden && "ring-1 ring-inset ring-primary/30")}>
                                 <td className="px-3 py-2">
                                   <div className="font-medium text-foreground">{r.name}</div>
                                   <div className="text-xs text-muted-foreground">{r.email}</div>
                                 </td>
-                                <td className="px-3 py-2 text-foreground">
-                                  {r.assignedSlotLabel ?? <span className="text-muted-foreground italic">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-foreground tabular-nums">
-                                  {tStart && tEnd
-                                    ? `${fmt12(tStart)} – ${fmt12(tEnd)}`
-                                    : <span className="text-muted-foreground italic">—</span>}
-                                </td>
+                                {isEditing ? (
+                                  <td colSpan={2} className="px-3 py-2">
+                                    <select
+                                      autoFocus
+                                      className="w-full text-sm rounded-lg border border-border bg-background px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                      value={r.assignedTime ?? "unassigned"}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        if (val === "unassigned") {
+                                          setEditOverrides(prev => ({ ...prev, [r.bookingId]: { assignedPriority: null, assignedTime: null, assignedSlotLabel: null, assignedTimeRange: null } }));
+                                        } else {
+                                          const pref = originalRow.preferences.find(p => p.assignedTime === val);
+                                          if (pref) setEditOverrides(prev => ({ ...prev, [r.bookingId]: { assignedPriority: pref.priority, assignedTime: pref.assignedTime, assignedSlotLabel: pref.slotLabel, assignedTimeRange: pref.timeRange } }));
+                                        }
+                                        setEditingRow(null);
+                                        setScheduleApplied(false);
+                                      }}
+                                    >
+                                      {originalRow.preferences.map(pref => {
+                                        const [ps, pe] = pref.timeRange.split("-");
+                                        return (
+                                          <option key={pref.priority} value={pref.assignedTime}>
+                                            {pref.priority === 1 ? "1st" : pref.priority === 2 ? "2nd" : "3rd"} choice — {pref.slotLabel} {fmt12(ps)}–{fmt12(pe)}
+                                          </option>
+                                        );
+                                      })}
+                                      <option value="unassigned">Unassigned</option>
+                                    </select>
+                                  </td>
+                                ) : (
+                                  <>
+                                    <td className="px-3 py-2 text-foreground">
+                                      {r.assignedSlotLabel ?? <span className="text-muted-foreground italic">—</span>}
+                                    </td>
+                                    <td className="px-3 py-2 text-foreground tabular-nums">
+                                      {tStart && tEnd
+                                        ? `${fmt12(tStart)} – ${fmt12(tEnd)}`
+                                        : <span className="text-muted-foreground italic">—</span>}
+                                    </td>
+                                  </>
+                                )}
                                 <td className="px-3 py-2 text-center">
                                   {badge
                                     ? <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full border", badge.cls)}>{badge.label}</span>
                                     : <span className="text-xs font-bold px-2 py-0.5 rounded-full border bg-red-500/15 text-red-700 border-red-500/30">None</span>
                                   }
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  {isEditing ? (
+                                    <button onClick={() => setEditingRow(null)} className="text-muted-foreground hover:text-foreground transition-colors" title="Cancel edit">
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  ) : (
+                                    <button onClick={() => setEditingRow(r.bookingId)} className={cn("transition-colors", isOverridden ? "text-primary" : "text-muted-foreground hover:text-foreground")} title="Edit assignment">
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </td>
                               </tr>
                             );
@@ -2675,25 +2745,33 @@ export default function Teacher() {
                     {/* Action buttons */}
                     <div className="flex items-center gap-3 flex-wrap">
                       <button
-                        onClick={scheduleIsAiGenerated ? handleApplyAiSchedule : async () => {
+                        onClick={async () => {
+                          if (!effectivePreview) return;
                           setIsApplyingSchedule(true);
                           try {
-                            await adminFetch(`${import.meta.env.BASE_URL}api/bookings/auto-schedule`, {
+                            await adminFetch(`${import.meta.env.BASE_URL}api/bookings/apply-schedule`, {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ apply: true }),
+                              body: JSON.stringify({
+                                results: effectivePreview.map(r => ({
+                                  bookingId: r.bookingId,
+                                  assignedPriority: r.assignedPriority,
+                                  assignedTime: r.assignedTime,
+                                })),
+                              }),
                             });
                             setScheduleApplied(true);
+                            setEditOverrides({});
                             refetchBookings();
                           } finally {
                             setIsApplyingSchedule(false);
                           }
                         }}
-                        disabled={isApplyingSchedule || scheduleApplied}
+                        disabled={isApplyingSchedule || (scheduleApplied && !hasUnsavedEdits)}
                         className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-all"
                       >
                         {isApplyingSchedule ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCheck className="w-4 h-4" />}
-                        {scheduleApplied ? "Schedule Applied" : "Apply Schedule"}
+                        {scheduleApplied && !hasUnsavedEdits ? "Schedule Applied" : "Apply Schedule"}
                       </button>
 
                       {clearScheduleConfirm ? (
@@ -2708,6 +2786,8 @@ export default function Teacher() {
                                 setScheduleSummary(null);
                                 setScheduleApplied(false);
                                 setClearScheduleConfirm(false);
+                                setEditOverrides({});
+                                setEditingRow(null);
                                 refetchBookings();
                               } finally {
                                 setIsClearingSchedule(false);

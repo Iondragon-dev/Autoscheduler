@@ -354,6 +354,18 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
     const slotId = a && pipeIdx >= 0 ? parseInt(a.time.slice(0, pipeIdx)) : null;
     const timeRange = a && pipeIdx >= 0 ? a.time.slice(pipeIdx + 1) : null;
     const slot = slotId != null ? allSlots.find(s => s.id === slotId) : null;
+    const parsedEntry = bookingParsed.find(bp => bp.bookingId === b.id);
+    const preferences = (parsedEntry?.priorities ?? []).map((p, i) => {
+      if (!p) return null;
+      const prefSlot = allSlots.find(s => s.id === p.slotId);
+      if (!prefSlot) return null;
+      return {
+        priority: i + 1,
+        slotLabel: prefSlot.label,
+        timeRange: p.key.slice(p.key.indexOf("|") + 1),
+        assignedTime: p.key,
+      };
+    }).filter((p): p is NonNullable<typeof p> => p !== null);
     return {
       bookingId: b.id,
       name: b.name,
@@ -362,6 +374,7 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
       assignedSlotLabel: slot?.label ?? null,
       assignedTimeRange: timeRange,
       assignedTime: a?.time ?? null,
+      preferences,
     };
   });
 
