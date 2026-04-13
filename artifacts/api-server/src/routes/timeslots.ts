@@ -310,9 +310,9 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
   const unassigned = new Set(bookingParsed.map(b => b.bookingId));
 
   // Each iteration: pick the student whose options are most constrained RIGHT NOW.
-  // Primary sort: fewest currently-available preferences.
-  // Tie-break: fewest distinct days among those available preferences — a student
-  //   whose picks all fall on one day is more at risk than one spread across many days.
+  // Primary sort: fewest distinct days among currently-available preferences — a student
+  //   locked into one day is most at risk if that day fills up.
+  // Tie-break: fewest currently-available preferences overall.
   // Final tie-break: submission order (preserved by iteration order through bookingParsed).
   while (unassigned.size > 0) {
     let bestEntry: typeof bookingParsed[0] | null = null;
@@ -328,7 +328,7 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
       ) as NonNullable<ReturnType<typeof parsePriority>>[];
       const avail = availPriorities.length;
       const days = new Set(availPriorities.map(p => allSlots.find(s => s.id === p.slotId)?.label ?? p.slotId)).size;
-      if (avail < bestAvail || (avail === bestAvail && days < bestDays)) {
+      if (days < bestDays || (days === bestDays && avail < bestAvail)) {
         bestAvail = avail; bestDays = days; bestEntry = entry;
       }
     }
