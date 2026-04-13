@@ -309,22 +309,28 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
   const assignments = new Map<number, { priority: number; time: string }>();
   const unassigned = new Set(bookingParsed.map(b => b.bookingId));
 
-  // Each iteration: pick the student whose options are most constrained RIGHT NOW
-  // (fewest currently-available preferences). This dynamically re-evaluates as slots
-  // fill up, so a student whose fallbacks got taken is prioritised over someone who
-  // still has many open choices. Ties broken by original submission order.
+  // Each iteration: pick the student whose options are most constrained RIGHT NOW.
+  // Primary sort: fewest currently-available preferences.
+  // Tie-break: fewest distinct days among those available preferences — a student
+  //   whose picks all fall on one day is more at risk than one spread across many days.
+  // Final tie-break: submission order (preserved by iteration order through bookingParsed).
   while (unassigned.size > 0) {
     let bestEntry: typeof bookingParsed[0] | null = null;
     let bestAvail = Infinity;
+    let bestDays = Infinity;
 
     for (const entry of bookingParsed) {
       if (!unassigned.has(entry.bookingId)) continue;
-      const avail = entry.priorities.filter(
+      const availPriorities = entry.priorities.filter(
         p => p !== null &&
              allSlots.some(s => s.id === p!.slotId) &&
              !overlapsAssigned(p!.slotId, p!.startMins, p!.endMins)
-      ).length;
-      if (avail < bestAvail) { bestAvail = avail; bestEntry = entry; }
+      ) as NonNullable<ReturnType<typeof parsePriority>>[];
+      const avail = availPriorities.length;
+      const days = new Set(availPriorities.map(p => allSlots.find(s => s.id === p.slotId)?.label ?? p.slotId)).size;
+      if (avail < bestAvail || (avail === bestAvail && days < bestDays)) {
+        bestAvail = avail; bestDays = days; bestEntry = entry;
+      }
     }
 
     if (!bestEntry) break;
