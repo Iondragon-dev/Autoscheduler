@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, timeSlotsTable, bookingsTable } from "@workspace/db";
+import { db, timeSlotsTable, bookingsTable, teachersTable } from "@workspace/db";
 import { eq, inArray, and } from "drizzle-orm";
 import { CreateBookingBody, CreateTimeSlotBody, UpdateTimeSlotBody } from "@workspace/api-zod";
 import { requireTeacherSession } from "./auth";
@@ -157,6 +157,39 @@ router.delete("/bookings/:id", requireTeacherSession, async (req, res) => {
   if (!booking.length) { res.status(404).json({ message: "Booking not found." }); return; }
   await db.delete(bookingsTable).where(eq(bookingsTable.id, id));
   res.json({ ok: true });
+});
+
+// Lookup a student's existing booking by email + teacher slug (no auth required — email is the secret)
+router.get("/bookings/lookup", async (req, res) => {
+  const email = (req.query.email as string | undefined)?.toLowerCase().trim();
+  const slug = req.query.slug as string | undefined;
+  if (!email || !slug) { res.status(400).json({ message: "email and slug are required" }); return; }
+  const teacherRows = await db.select({ id: teachersTable.id }).from(teachersTable).where(eq(teachersTable.slug, slug)).limit(1);
+  if (!teacherRows.length) { res.status(404).json({ message: "Teacher not found" }); return; }
+  const teacherId = teacherRows[0].id;
+  const slotRows = await db.select({ id: timeSlotsTable.id }).from(timeSlotsTable).where(eq(timeSlotsTable.teacherId, teacherId));
+  if (!slotRows.length) { res.status(404).json({ message: "No booking found" }); return; }
+  const [booking] = await db.select().from(bookingsTable)
+    .where(and(eq(bookingsTable.email, email), inArray(bookingsTable.timeSlotId, slotRows.map(s => s.id))))
+    .limit(1);
+  if (!booking) { res.status(404).json({ message: "No booking found" }); return; }
+  res.json(booking);
+});
+
+// Update a student's own booking priorities — email used for ownership verification
+router.put("/bookings/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ message: "Invalid id" }); return; }
+  const { email, priority1, priority2, priority3 } = req.body ?? {};
+  if (!email) { res.status(400).json({ message: "email is required" }); return; }
+  const [existing] = await db.select().from(bookingsTable).where(eq(bookingsTable.id, id)).limit(1);
+  if (!existing) { res.status(404).json({ message: "Booking not found" }); return; }
+  if (existing.email !== email.toLowerCase().trim()) { res.status(403).json({ message: "Email does not match this booking" }); return; }
+  const [updated] = await db.update(bookingsTable)
+    .set({ priority1, priority2, priority3, assignedPriority: null, assignedTime: null })
+    .where(eq(bookingsTable.id, id))
+    .returning();
+  res.json(updated);
 });
 
 router.post("/bookings", async (req, res) => {

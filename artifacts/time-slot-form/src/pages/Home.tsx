@@ -107,6 +107,11 @@ export default function Home() {
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
   const navLockedRef = useRef(false);
 
+  const [editingBookingId, setEditingBookingId] = useState<number | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isEditLoading, setIsEditLoading] = useState(false);
+  const [showEditOffer, setShowEditOffer] = useState(false);
+
   const [choices, setChoices] = useState<Choice[]>([
     { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
     { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
@@ -208,6 +213,43 @@ export default function Home() {
     setPage(p => Math.max(p - 1, 0));
   };
 
+  const parsePriorityToChoice = (priority: string): Choice | null => {
+    const pipeIdx = priority.indexOf("|");
+    if (pipeIdx === -1) return null;
+    const slotId = parseInt(priority.slice(0, pipeIdx));
+    if (isNaN(slotId)) return null;
+    const range = priority.slice(pipeIdx + 1);
+    const dashIdx = range.indexOf("-");
+    if (dashIdx === -1) return null;
+    const start = range.slice(0, dashIdx);
+    const end = range.slice(dashIdx + 1);
+    const duration = toMins(end) - toMins(start);
+    const preset = DURATION_OPTIONS.find(d => d.value === duration);
+    return { slotId, duration: preset ? duration : null, isCustomDuration: !preset, customDurationStr: !preset ? String(duration) : "", start, isCustomTime: false, customTimeStr: "" };
+  };
+
+  const handleLoadEditMode = async () => {
+    setIsEditLoading(true);
+    try {
+      const res = await fetch(`/api/bookings/lookup?email=${encodeURIComponent(email.trim().toLowerCase())}&slug=${encodeURIComponent(slug ?? "")}`);
+      if (!res.ok) { setSubmitError("Couldn't find your submission. Please try again."); return; }
+      const booking = await res.json() as { id: number; priority1: string; priority2: string; priority3: string };
+      const parsed = [booking.priority1, booking.priority2, booking.priority3].map(p => parsePriorityToChoice(p));
+      if (parsed.some(c => c === null)) { setSubmitError("Couldn't load your previous choices. Please try again."); return; }
+      setChoices(parsed as Choice[]);
+      setEditingBookingId(booking.id);
+      setShowEditOffer(false);
+      setSubmitError(null);
+      setPage(0);
+      setDirection(1);
+      navLockedRef.current = false;
+    } catch {
+      setSubmitError("Network error. Please try again.");
+    } finally {
+      setIsEditLoading(false);
+    }
+  };
+
   const handleStartOver = () => {
     setConfirmedBooking(null);
     setPage(0);
@@ -221,10 +263,12 @@ export default function Home() {
     setEmail("");
     setDetailsErrors({});
     setSubmitError(null);
+    setEditingBookingId(null);
+    setShowEditOffer(false);
     navLockedRef.current = false;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const errs: typeof detailsErrors = {};
     if (!name.trim()) errs.name = "Name is required";
     if (!email.trim()) errs.email = "Email is required";
@@ -238,6 +282,30 @@ export default function Home() {
     });
 
     setSubmitError(null);
+    setShowEditOffer(false);
+
+    // Edit mode: PUT to update existing booking
+    if (editingBookingId !== null) {
+      setIsUpdating(true);
+      try {
+        const res = await fetch(`/api/bookings/${editingBookingId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim(), priority1: priorities[0], priority2: priorities[1], priority3: priorities[2] }),
+        });
+        const data = await res.json();
+        if (!res.ok) { setSubmitError(data.message ?? "Failed to update. Please try again."); return; }
+        setConfirmedBooking(data);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch {
+        setSubmitError("Network error. Please try again.");
+      } finally {
+        setIsUpdating(false);
+      }
+      return;
+    }
+
+    // New booking: POST
     createBooking.mutate({
       data: {
         timeSlotId: choices[0].slotId!,
@@ -253,8 +321,11 @@ export default function Home() {
         window.scrollTo({ top: 0, behavior: "smooth" });
       },
       onError: (err: unknown) => {
-        // Prefer the server's JSON `message` field if available
         const serverMsg = (err as { data?: { message?: string } })?.data?.message;
+        if (serverMsg?.toLowerCase().includes("already been submitted")) {
+          setShowEditOffer(true);
+          return;
+        }
         const msg =
           serverMsg ??
           (err instanceof Error
@@ -368,6 +439,13 @@ export default function Home() {
                   ))}
                 </div>
               </div>
+
+              {editingBookingId !== null && (
+                <div className="mx-6 sm:mx-8 -mb-1 mt-3 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium flex items-center gap-2">
+                  <span className="shrink-0">✏️</span>
+                  Editing your existing submission — review your choices and tap <strong>Update Request</strong> when ready.
+                </div>
+              )}
 
               {/* ── Page body ── */}
               <div className="min-h-[320px]">
@@ -751,7 +829,7 @@ export default function Home() {
                             <Input
                               type="email"
                               value={email}
-                              onChange={e => { setEmail(e.target.value); setDetailsErrors(p => ({ ...p, email: undefined })); }}
+                              onChange={e => { setEmail(e.target.value); setDetailsErrors(p => ({ ...p, email: undefined })); setShowEditOffer(false); }}
                               placeholder="jane@example.com"
                               maxLength={40}
                               error={!!detailsErrors.email}
@@ -763,6 +841,20 @@ export default function Home() {
                             )}
                           </div>
                         </div>
+
+                        {showEditOffer && (
+                          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm space-y-2">
+                            <p className="font-medium">You already have a submission for this email.</p>
+                            <p className="text-amber-700 text-xs">Would you like to load your previous choices and update them?</p>
+                            <button
+                              onClick={handleLoadEditMode}
+                              disabled={isEditLoading}
+                              className="mt-1 flex items-center gap-1.5 bg-amber-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-amber-800 disabled:opacity-50 transition-all"
+                            >
+                              {isEditLoading ? "Loading…" : "Edit my submission"}
+                            </button>
+                          </div>
+                        )}
 
                         {(createBooking.isError || submitError) && (
                           <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm flex gap-2 items-start">
@@ -799,10 +891,12 @@ export default function Home() {
                 ) : (
                   <button
                     onClick={handleSubmit}
-                    disabled={createBooking.isPending}
+                    disabled={createBooking.isPending || isUpdating}
                     className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-primary/90 disabled:opacity-40 transition-all"
                   >
-                    {createBooking.isPending ? "Submitting…" : "Submit Request"}
+                    {(createBooking.isPending || isUpdating)
+                      ? (editingBookingId !== null ? "Updating…" : "Submitting…")
+                      : (editingBookingId !== null ? "Update Request" : "Submit Request")}
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 )}
@@ -832,7 +926,7 @@ export default function Home() {
                 transition={{ delay: 0.3 }}
                 className="text-4xl font-display font-bold text-foreground mb-3"
               >
-                Request Sent!
+                {editingBookingId !== null ? "Preferences Updated!" : "Request Sent!"}
               </motion.h2>
 
               <motion.p
@@ -841,8 +935,10 @@ export default function Home() {
                 transition={{ delay: 0.4 }}
                 className="text-lg text-muted-foreground mb-8"
               >
-                Thanks, <span className="font-semibold text-foreground">{confirmedBooking.name}</span>!
-                Your preferences have been recorded.
+                Thanks, <span className="font-semibold text-foreground">{confirmedBooking.name}</span>!{" "}
+                {editingBookingId !== null
+                  ? "Your preferences have been updated."
+                  : "Your preferences have been recorded."}
               </motion.p>
 
               <motion.div
