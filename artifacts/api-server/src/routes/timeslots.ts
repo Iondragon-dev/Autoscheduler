@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, timeSlotsTable, bookingsTable, teachersTable } from "@workspace/db";
-import { eq, inArray, and } from "drizzle-orm";
+import { eq, inArray, and, isNotNull } from "drizzle-orm";
 import { CreateBookingBody, CreateTimeSlotBody, UpdateTimeSlotBody } from "@workspace/api-zod";
 import { requireTeacherSession } from "./auth";
 
@@ -189,6 +189,7 @@ router.put("/bookings/:id", async (req, res) => {
     .set({ priority1, priority2, priority3, assignedPriority: null, assignedTime: null })
     .where(eq(bookingsTable.id, id))
     .returning();
+  await syncBlockedTimes([existing.timeSlotId]);
   res.json(updated);
 });
 
@@ -431,6 +432,29 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
   res.json({ results, summary });
 });
 
+// Recompute blockedTimes for a set of slot IDs based on their currently assigned bookings
+async function syncBlockedTimes(slotIds: number[]) {
+  if (slotIds.length === 0) return;
+  const assigned = await db.select({ timeSlotId: bookingsTable.timeSlotId, assignedTime: bookingsTable.assignedTime })
+    .from(bookingsTable)
+    .where(and(inArray(bookingsTable.timeSlotId, slotIds), isNotNull(bookingsTable.assignedTime)));
+
+  const grouped = new Map<number, Array<{ start: string; end: string }>>();
+  for (const sid of slotIds) grouped.set(sid, []);
+  for (const b of assigned) {
+    if (!b.assignedTime) continue;
+    const dashIdx = b.assignedTime.indexOf("-");
+    if (dashIdx === -1) continue;
+    grouped.get(b.timeSlotId)!.push({ start: b.assignedTime.slice(0, dashIdx), end: b.assignedTime.slice(dashIdx + 1) });
+  }
+
+  for (const [slotId, blocked] of grouped) {
+    await db.update(timeSlotsTable)
+      .set({ blockedTimes: blocked.length > 0 ? blocked : null })
+      .where(eq(timeSlotsTable.id, slotId));
+  }
+}
+
 router.post("/bookings/apply-schedule", requireTeacherSession, async (req, res) => {
   const { results } = req.body as {
     results: Array<{ bookingId: number; assignedPriority: number | null; assignedTime: string | null }>;
@@ -446,6 +470,7 @@ router.post("/bookings/apply-schedule", requireTeacherSession, async (req, res) 
       .set({ assignedPriority: r.assignedPriority, assignedTime: r.assignedTime })
       .where(and(eq(bookingsTable.id, r.bookingId), inArray(bookingsTable.timeSlotId, slotIds)));
   }
+  await syncBlockedTimes(slotIds);
   res.json({ ok: true });
 });
 
@@ -453,6 +478,7 @@ router.delete("/bookings/schedule", requireTeacherSession, async (_req, res) => 
   const slotIds = await getTeacherSlotIds(res.locals.teacherId);
   if (slotIds.length > 0) {
     await db.update(bookingsTable).set({ assignedPriority: null, assignedTime: null }).where(inArray(bookingsTable.timeSlotId, slotIds));
+    await syncBlockedTimes(slotIds);
   }
   res.json({ ok: true });
 });
