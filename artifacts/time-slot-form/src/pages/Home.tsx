@@ -240,7 +240,7 @@ export default function Home() {
       setEditingBookingId(booking.id);
       setShowEditOffer(false);
       setSubmitError(null);
-      setPage(0);
+      setPage(TOTAL_PAGES - 1);
       setDirection(1);
       navLockedRef.current = false;
     } catch {
