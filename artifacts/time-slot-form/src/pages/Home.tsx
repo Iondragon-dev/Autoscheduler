@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertCircle, ArrowRight, ArrowLeft, Check,
-  User, Mail, Clock, CalendarDays, Timer, GraduationCap,
+  User, Mail, Clock, CalendarDays, Timer, GraduationCap, Pencil,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useCreateBooking } from "@workspace/api-client-react";
@@ -115,6 +115,7 @@ export default function Home() {
   const [showEditEmailPrompt, setShowEditEmailPrompt] = useState(false);
   const [editEmailInput, setEditEmailInput] = useState("");
   const [editLookupError, setEditLookupError] = useState<string | null>(null);
+  const [editReturnToDetails, setEditReturnToDetails] = useState(false);
 
   const [choices, setChoices] = useState<Choice[]>([
     { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
@@ -208,7 +209,12 @@ export default function Home() {
     if (navLockedRef.current || !canGoNext()) return;
     navLockedRef.current = true;
     setDirection(1);
-    setPage(p => Math.min(p + 1, TOTAL_PAGES - 1));
+    if (editReturnToDetails && page % 3 === 2) {
+      setEditReturnToDetails(false);
+      setPage(TOTAL_PAGES - 1);
+    } else {
+      setPage(p => Math.min(p + 1, TOTAL_PAGES - 1));
+    }
   };
   const goBack = () => {
     if (navLockedRef.current) return;
@@ -242,6 +248,7 @@ export default function Home() {
     setEditEmailInput("");
     setEditLookupError(null);
     setSubmitError(null);
+    setEditReturnToDetails(false);
     setPage(TOTAL_PAGES - 1);
     setDirection(1);
     navLockedRef.current = false;
@@ -303,6 +310,7 @@ export default function Home() {
     setShowEditEmailPrompt(false);
     setEditEmailInput("");
     setEditLookupError(null);
+    setEditReturnToDetails(false);
     navLockedRef.current = false;
   };
 
@@ -869,23 +877,44 @@ export default function Home() {
                         {/* Summary */}
                         <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-2">
                           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                            Your 3 preferences
+                            {editingBookingId !== null ? "Tap a preference to change it" : "Your 3 preferences"}
                           </p>
                           {choices.map((c, i) => {
                             const slot = availableSlots.find(s => s.id === c.slotId);
                             const dur = getEffectiveDuration(c);
                             const endStr = c.start && dur ? fromMins(toMins(c.start) + dur) : null;
-                            return (
-                              <div key={i} className="flex items-center gap-2.5 text-sm">
+                            const inner = (
+                              <>
                                 <span className={cn("text-xs font-bold px-2 py-0.5 rounded-md border shrink-0", PRIORITY_COLORS[i])}>
                                   {PRIORITY_LABELS[i]}
                                 </span>
-                                <span className="font-medium text-foreground truncate">{slot?.label ?? "—"}</span>
+                                <span className="font-medium text-foreground truncate flex-1">{slot?.label ?? "—"}</span>
                                 {c.start && endStr && (
                                   <span className="text-muted-foreground text-xs shrink-0">
                                     {fmt12(c.start)} – {fmt12(endStr)}
                                   </span>
                                 )}
+                                {editingBookingId !== null && (
+                                  <Pencil className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                                )}
+                              </>
+                            );
+                            return editingBookingId !== null ? (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => {
+                                  setEditReturnToDetails(true);
+                                  setDirection(-1);
+                                  setPage(i * 3);
+                                }}
+                                className="flex w-full items-center gap-2.5 text-sm px-2 py-1.5 -mx-2 rounded-lg hover:bg-primary/8 transition-colors text-left"
+                              >
+                                {inner}
+                              </button>
+                            ) : (
+                              <div key={i} className="flex items-center gap-2.5 text-sm">
+                                {inner}
                               </div>
                             );
                           })}
