@@ -112,6 +112,10 @@ export default function Home() {
   const [isEditLoading, setIsEditLoading] = useState(false);
   const [showEditOffer, setShowEditOffer] = useState(false);
 
+  const [showEditEmailPrompt, setShowEditEmailPrompt] = useState(false);
+  const [editEmailInput, setEditEmailInput] = useState("");
+  const [editLookupError, setEditLookupError] = useState<string | null>(null);
+
   const [choices, setChoices] = useState<Choice[]>([
     { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
     { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
@@ -228,23 +232,54 @@ export default function Home() {
     return { slotId, duration: preset ? duration : null, isCustomDuration: !preset, customDurationStr: !preset ? String(duration) : "", start, isCustomTime: false, customTimeStr: "" };
   };
 
+  const applyEditMode = (booking: { id: number; priority1: string; priority2: string; priority3: string }) => {
+    const parsed = [booking.priority1, booking.priority2, booking.priority3].map(p => parsePriorityToChoice(p));
+    if (parsed.some(c => c === null)) return false;
+    setChoices(parsed as Choice[]);
+    setEditingBookingId(booking.id);
+    setShowEditOffer(false);
+    setShowEditEmailPrompt(false);
+    setEditEmailInput("");
+    setEditLookupError(null);
+    setSubmitError(null);
+    setPage(TOTAL_PAGES - 1);
+    setDirection(1);
+    navLockedRef.current = false;
+    return true;
+  };
+
   const handleLoadEditMode = async () => {
     setIsEditLoading(true);
     try {
       const res = await fetch(`/api/bookings/lookup?email=${encodeURIComponent(email.trim().toLowerCase())}&slug=${encodeURIComponent(slug ?? "")}`);
       if (!res.ok) { setSubmitError("Couldn't find your submission. Please try again."); return; }
       const booking = await res.json() as { id: number; priority1: string; priority2: string; priority3: string };
-      const parsed = [booking.priority1, booking.priority2, booking.priority3].map(p => parsePriorityToChoice(p));
-      if (parsed.some(c => c === null)) { setSubmitError("Couldn't load your previous choices. Please try again."); return; }
-      setChoices(parsed as Choice[]);
-      setEditingBookingId(booking.id);
-      setShowEditOffer(false);
-      setSubmitError(null);
-      setPage(TOTAL_PAGES - 1);
-      setDirection(1);
-      navLockedRef.current = false;
+      if (!applyEditMode(booking)) { setSubmitError("Couldn't load your previous choices. Please try again."); }
     } catch {
       setSubmitError("Network error. Please try again.");
+    } finally {
+      setIsEditLoading(false);
+    }
+  };
+
+  const handleFrontEditLookup = async () => {
+    const emailStr = editEmailInput.trim().toLowerCase();
+    if (!emailStr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr)) {
+      setEditLookupError("Please enter a valid email address.");
+      return;
+    }
+    setIsEditLoading(true);
+    setEditLookupError(null);
+    try {
+      const res = await fetch(`/api/bookings/lookup?email=${encodeURIComponent(emailStr)}&slug=${encodeURIComponent(slug ?? "")}`);
+      if (res.status === 404) { setEditLookupError("No submission found for that email."); return; }
+      if (!res.ok) { setEditLookupError("Something went wrong. Please try again."); return; }
+      const booking = await res.json() as { id: number; priority1: string; priority2: string; priority3: string; name?: string; email?: string };
+      if (!applyEditMode(booking)) { setEditLookupError("Couldn't load your previous choices. Please try again."); return; }
+      if (booking.name) setName(booking.name);
+      if (booking.email) setEmail(booking.email);
+    } catch {
+      setEditLookupError("Network error. Please try again.");
     } finally {
       setIsEditLoading(false);
     }
@@ -265,6 +300,9 @@ export default function Home() {
     setSubmitError(null);
     setEditingBookingId(null);
     setShowEditOffer(false);
+    setShowEditEmailPrompt(false);
+    setEditEmailInput("");
+    setEditLookupError(null);
     navLockedRef.current = false;
   };
 
@@ -523,6 +561,56 @@ export default function Home() {
                                 </button>
                               );
                             })}
+                          </div>
+                        )}
+
+                        {/* ────── Already submitted? prompt (page 0 only) ────── */}
+                        {page === 0 && (
+                          <div className="pt-2">
+                            {!showEditEmailPrompt ? (
+                              <button
+                                type="button"
+                                onClick={() => setShowEditEmailPrompt(true)}
+                                className="text-xs text-muted-foreground hover:text-primary transition-colors underline underline-offset-2"
+                              >
+                                Already submitted? Edit your request instead
+                              </button>
+                            ) : (
+                              <div className="p-3 rounded-xl bg-muted/50 border border-border space-y-2">
+                                <p className="text-xs font-semibold text-foreground">Edit your existing submission</p>
+                                <p className="text-xs text-muted-foreground">Enter the email you used when you first submitted.</p>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="email"
+                                    value={editEmailInput}
+                                    onChange={e => { setEditEmailInput(e.target.value); setEditLookupError(null); }}
+                                    onKeyDown={e => { if (e.key === "Enter") handleFrontEditLookup(); }}
+                                    placeholder="your@email.com"
+                                    className="flex-1 text-xs rounded-lg border border-border bg-background px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={handleFrontEditLookup}
+                                    disabled={isEditLoading}
+                                    className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 transition-all"
+                                  >
+                                    {isEditLoading ? "…" : "Continue"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setShowEditEmailPrompt(false); setEditEmailInput(""); setEditLookupError(null); }}
+                                    className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded-lg hover:bg-muted transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                                {editLookupError && (
+                                  <p className="text-xs text-destructive flex items-center gap-1">
+                                    <AlertCircle className="w-3 h-3 shrink-0" />{editLookupError}
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </>
