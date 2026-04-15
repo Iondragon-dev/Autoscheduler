@@ -443,9 +443,12 @@ async function syncBlockedTimes(slotIds: number[]) {
   for (const sid of slotIds) grouped.set(sid, []);
   for (const b of assigned) {
     if (!b.assignedTime) continue;
-    const dashIdx = b.assignedTime.indexOf("-");
+    // assignedTime format: "slotId|HH:MM-HH:MM" — strip the prefix before parsing
+    const pipeIdx = b.assignedTime.indexOf("|");
+    const range = pipeIdx !== -1 ? b.assignedTime.slice(pipeIdx + 1) : b.assignedTime;
+    const dashIdx = range.indexOf("-");
     if (dashIdx === -1) continue;
-    grouped.get(b.timeSlotId)!.push({ start: b.assignedTime.slice(0, dashIdx), end: b.assignedTime.slice(dashIdx + 1) });
+    grouped.get(b.timeSlotId)!.push({ start: range.slice(0, dashIdx), end: range.slice(dashIdx + 1) });
   }
 
   for (const [slotId, blocked] of grouped) {
