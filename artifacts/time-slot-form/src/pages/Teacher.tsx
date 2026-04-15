@@ -2277,7 +2277,7 @@ export default function Teacher() {
         </div>
 
         <AnimatePresence mode="wait">
-          {tab === "slots" ? (
+          {tab === "slots" && (
             <motion.div key="slots" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.25 }}>
               <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-lg p-5">
                 <div className="flex items-center justify-between mb-4">
@@ -2505,7 +2505,8 @@ export default function Teacher() {
                 )}
               </div>
             </motion.div>
-          ) : (
+          )}
+          {tab === "calendar" && (
             <motion.div key="calendar" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.25 }}>
               <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-lg p-5">
                 <h2 className="font-bold text-foreground text-lg mb-4">Weekly Schedule & Bookings</h2>
