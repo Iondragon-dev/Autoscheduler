@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  AlertCircle, ArrowRight, ArrowLeft, Check,
+  AlertCircle, ArrowRight, ArrowLeft, Check, CheckCircle2,
   User, Mail, Clock, CalendarDays, Timer, GraduationCap, Pencil, ChevronDown,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -128,6 +128,7 @@ export default function Home() {
   const [showBillboard, setShowBillboard] = useState(true);
   const [expandedSlotId, setExpandedSlotId] = useState<number | null>(null);
   const [showBillboardEditPrompt, setShowBillboardEditPrompt] = useState(false);
+  const [editSaved, setEditSaved] = useState(false);
 
   const [choices, setChoices] = useState<Choice[]>([
     { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
@@ -385,8 +386,21 @@ export default function Home() {
         });
         const data = await res.json();
         if (!res.ok) { setSubmitError(data.message ?? "Failed to update. Please try again."); return; }
-        setConfirmedBooking(data);
-        queryClient.invalidateQueries({ queryKey: ["teacher-slots", slug] });
+        // Invalidate billboard data so it shows the freed slot
+        await queryClient.invalidateQueries({ queryKey: ["teacher-slots", slug] });
+        // Reset form and return to the refreshed billboard
+        setEditingBookingId(null);
+        setPage(0);
+        setDirection(1);
+        setChoices([
+          { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
+          { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
+          { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
+        ]);
+        setShowBillboardEditPrompt(false);
+        setShowBillboard(true);
+        setEditSaved(true);
+        setTimeout(() => setEditSaved(false), 4000);
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch {
         setSubmitError("Network error. Please try again.");
@@ -497,6 +511,19 @@ export default function Home() {
                 ) : null}
                 <p className="text-xs font-semibold text-primary/70 uppercase tracking-widest mt-3">Session Schedule</p>
               </div>
+
+              {/* Edit-saved banner */}
+              {editSaved && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="mx-6 sm:mx-8 mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-2.5 text-sm text-emerald-700"
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>Your booking has been updated. The teacher will reassign your slot shortly.</span>
+                </motion.div>
+              )}
 
               {/* Slot list */}
               <div className="px-6 sm:px-8 py-5 space-y-2.5">
