@@ -4,7 +4,7 @@ import {
   AlertCircle, ArrowRight, ArrowLeft, Check,
   User, Mail, Clock, CalendarDays, Timer, GraduationCap, Pencil, ChevronDown,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCreateBooking } from "@workspace/api-client-react";
 import type { Booking } from "@workspace/api-client-react";
 import { Link, useParams } from "wouter";
@@ -107,6 +107,7 @@ export default function Home() {
     enabled: !!slug,
   });
   const createBooking = useCreateBooking();
+  const queryClient = useQueryClient();
   const teacher = teacherData?.teacher;
   const slots = teacherData?.slots ?? [];
 
@@ -385,6 +386,7 @@ export default function Home() {
         const data = await res.json();
         if (!res.ok) { setSubmitError(data.message ?? "Failed to update. Please try again."); return; }
         setConfirmedBooking(data);
+        queryClient.invalidateQueries({ queryKey: ["teacher-slots", slug] });
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch {
         setSubmitError("Network error. Please try again.");
