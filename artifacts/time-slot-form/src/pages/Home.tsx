@@ -123,6 +123,7 @@ export default function Home() {
   const [editEmailInput, setEditEmailInput] = useState("");
   const [editLookupError, setEditLookupError] = useState<string | null>(null);
   const [editReturnToDetails, setEditReturnToDetails] = useState(false);
+  const [showBillboard, setShowBillboard] = useState(true);
 
   const [choices, setChoices] = useState<Choice[]>([
     { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
@@ -439,7 +440,123 @@ export default function Home() {
         </div>
 
         <AnimatePresence mode="wait">
-          {!confirmedBooking ? (
+          {showBillboard ? (
+            <motion.div
+              key="billboard"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.35 }}
+              className="bg-card/90 backdrop-blur-2xl rounded-[2rem] shadow-2xl border border-white/50 overflow-hidden"
+            >
+              {/* Billboard header */}
+              <div className="bg-primary/5 border-b border-border/40 px-6 sm:px-8 pt-6 pb-5">
+                {isLoading ? (
+                  <div className="h-5 w-32 rounded bg-muted/50 animate-pulse mb-2" />
+                ) : teacher ? (
+                  <div className="flex items-center gap-2.5 mb-1">
+                    <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                      <GraduationCap className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <div className="text-base font-bold text-foreground leading-tight">{teacher.name}</div>
+                      {teacher.subject && (
+                        <div className="text-xs text-muted-foreground mt-0.5">{teacher.subject}</div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+                <p className="text-xs font-semibold text-primary/70 uppercase tracking-widest mt-3">Session Schedule</p>
+              </div>
+
+              {/* Slot list */}
+              <div className="px-6 sm:px-8 py-5 space-y-2.5">
+                {isLoading ? (
+                  <div className="space-y-2">
+                    {[1,2,3,4].map(i => (
+                      <div key={i} className="h-14 rounded-xl bg-muted/40 animate-pulse" />
+                    ))}
+                  </div>
+                ) : isError ? (
+                  <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm flex gap-2 items-center">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    Could not load schedule. Please refresh.
+                  </div>
+                ) : slots.length === 0 ? (
+                  <div className="p-6 rounded-xl border-2 border-dashed border-border text-center text-muted-foreground text-sm">
+                    No availability has been set yet. Check back soon.
+                  </div>
+                ) : (
+                  [...slots]
+                    .sort((a, b) => slotDayRank(a.label) - slotDayRank(b.label))
+                    .map(slot => {
+                      const booked = (slot.blockedTimes ?? []).length;
+                      return (
+                        <div
+                          key={slot.id}
+                          className={cn(
+                            "flex items-center justify-between px-4 py-3 rounded-xl border",
+                            slot.available
+                              ? "border-emerald-200 bg-emerald-50/60"
+                              : "border-border bg-muted/30 opacity-60",
+                          )}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={cn(
+                              "w-2 h-2 rounded-full shrink-0",
+                              slot.available ? "bg-emerald-500" : "bg-muted-foreground/40",
+                            )} />
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-foreground truncate">{slot.label}</div>
+                              {!slot.available && (
+                                <div className="text-xs text-muted-foreground mt-0.5">Not accepting bookings</div>
+                              )}
+                            </div>
+                          </div>
+                          {slot.available && (
+                            <div className="shrink-0 ml-3 text-right">
+                              {booked > 0 ? (
+                                <span className="text-xs font-medium text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">
+                                  {booked} booked
+                                </span>
+                              ) : (
+                                <span className="text-xs font-medium text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                  Open
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+
+              {/* CTA */}
+              <div className="px-6 sm:px-8 pb-6 pt-1 space-y-3">
+                <button
+                  onClick={() => setShowBillboard(false)}
+                  disabled={isLoading || isError || !slots.some(s => s.available)}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-primary text-primary-foreground font-semibold text-sm shadow-md hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Book a Session
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                {slots.length > 0 && !slots.some(s => s.available) && (
+                  <p className="text-center text-xs text-muted-foreground">No slots are currently open for booking.</p>
+                )}
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => { setShowBillboard(false); setShowEditEmailPrompt(true); }}
+                    className="text-xs text-muted-foreground/70 hover:text-muted-foreground underline underline-offset-2 transition-colors"
+                  >
+                    Already submitted? Edit your request instead
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          ) : !confirmedBooking ? (
             <motion.div
               key="form"
               initial={{ opacity: 0, y: 20 }}
