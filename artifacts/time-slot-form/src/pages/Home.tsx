@@ -105,6 +105,8 @@ export default function Home() {
       return res.json() as Promise<TeacherSlotData>;
     },
     enabled: !!slug,
+    staleTime: 0,
+    refetchInterval: 30_000,
   });
   const createBooking = useCreateBooking();
   const queryClient = useQueryClient();

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   useGetTimeSlots,
@@ -1969,6 +1970,8 @@ function WeeklyCalendar() {
 // ── Main Teacher Page ────────────────────────────────────────────────────────
 export default function Teacher() {
   const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
+  const teacherSlug = getTeacherInfo()?.slug ?? "";
   const { data: slots, isLoading, refetch: refetchSlots } = useGetTimeSlots();
   const { data: bookings, refetch: refetchBookings } = useGetBookings();
   const createSlot = useCreateTimeSlot();
@@ -2109,6 +2112,7 @@ export default function Teacher() {
       });
       setScheduleApplied(true);
       refetchBookings();
+      queryClient.invalidateQueries({ queryKey: ["teacher-slots", teacherSlug] });
     } finally {
       setIsApplyingSchedule(false);
     }
@@ -2768,6 +2772,7 @@ export default function Teacher() {
                             setScheduleApplied(true);
                             setEditOverrides({});
                             refetchBookings();
+                            queryClient.invalidateQueries({ queryKey: ["teacher-slots", teacherSlug] });
                           } finally {
                             setIsApplyingSchedule(false);
                           }
