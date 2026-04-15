@@ -34,18 +34,23 @@ router.get("/teachers/:slug/timeslots", async (req, res) => {
     : [];
 
   // Map slotId -> [{ start, end, name }]
+  // Use the slotId encoded in assignedTime ("slotId|HH:MM-HH:MM") — not timeSlotId —
+  // because the auto-scheduler can assign a student to a different slot than the one
+  // they originally booked into.
   const namesBySlot = new Map<number, { start: string; end: string; name: string }[]>();
   for (const b of assignedBookings) {
-    if (!b.assignedTime || !b.timeSlotId) continue;
+    if (!b.assignedTime) continue;
     const pipeIdx = b.assignedTime.indexOf("|");
+    const assignedSlotId = pipeIdx !== -1 ? parseInt(b.assignedTime.slice(0, pipeIdx), 10) : b.timeSlotId;
+    if (!assignedSlotId || isNaN(assignedSlotId as number)) continue;
     const range = pipeIdx !== -1 ? b.assignedTime.slice(pipeIdx + 1) : b.assignedTime;
     const dashIdx = range.indexOf("-");
     if (dashIdx === -1) continue;
     const start = range.slice(0, dashIdx);
     const end = range.slice(dashIdx + 1);
-    const arr = namesBySlot.get(b.timeSlotId) ?? [];
+    const arr = namesBySlot.get(assignedSlotId) ?? [];
     arr.push({ start, end, name: b.name });
-    namesBySlot.set(b.timeSlotId, arr);
+    namesBySlot.set(assignedSlotId, arr);
   }
 
   res.json({
