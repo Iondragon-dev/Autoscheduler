@@ -503,14 +503,14 @@ async function scheduleUnassigned(teacherId: number, lastBookingId: number) {
     if (p) mark(p.slotId, p.startMins, p.endMins);
   }
 
-  // Only schedule unassigned bookings; lastBookingId goes last
+  // Schedule unassigned bookings, excluding the editing student (they stay unassigned until
+  // the teacher manually re-runs the scheduler, giving other waiting students the freed slot)
   const pending = allBookings
-    .filter(b => b.assignedTime === null)
+    .filter(b => b.assignedTime === null && b.id !== lastBookingId)
     .map(b => ({
       bookingId: b.id,
       timeSlotId: b.timeSlotId,
       priorities: [b.priority1, b.priority2, b.priority3].map(parsePri),
-      isLast: b.id === lastBookingId,
     }));
 
   const assignments = new Map<number, { priority: number; time: string }>();
@@ -523,7 +523,6 @@ async function scheduleUnassigned(teacherId: number, lastBookingId: number) {
 
     for (const entry of pending) {
       if (!unassigned.has(entry.bookingId)) continue;
-      if (entry.isLast && unassigned.size > 1) continue; // force last
 
       const avail = entry.priorities.filter(
         p => p && allSlots.some(s => s.id === p.slotId) && !overlaps(p.slotId, p.startMins, p.endMins)
