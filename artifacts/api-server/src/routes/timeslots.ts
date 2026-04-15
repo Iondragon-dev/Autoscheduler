@@ -439,23 +439,32 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
   res.json({ results, summary });
 });
 
-// Recompute blockedTimes for a set of slot IDs based on their currently assigned bookings
+// Recompute blockedTimes for a set of slot IDs based on their currently assigned bookings.
+// assignedTime is "assignedSlotId|HH:MM-HH:MM" — the slotId prefix identifies the actual
+// assigned slot, which may differ from the booking's original timeSlotId.
 async function syncBlockedTimes(slotIds: number[]) {
   if (slotIds.length === 0) return;
-  const assigned = await db.select({ timeSlotId: bookingsTable.timeSlotId, assignedTime: bookingsTable.assignedTime })
+
+  // Fetch all assigned bookings for these slots (by original timeSlotId)
+  const assigned = await db.select({ assignedTime: bookingsTable.assignedTime })
     .from(bookingsTable)
     .where(and(inArray(bookingsTable.timeSlotId, slotIds), isNotNull(bookingsTable.assignedTime)));
 
+  // Group blocked intervals by the slot ID encoded in assignedTime, not by timeSlotId
   const grouped = new Map<number, Array<{ start: string; end: string }>>();
-  for (const sid of slotIds) grouped.set(sid, []);
+  for (const sid of slotIds) grouped.set(sid, []); // ensure every affected slot is cleared
   for (const b of assigned) {
     if (!b.assignedTime) continue;
-    // assignedTime format: "slotId|HH:MM-HH:MM" — strip the prefix before parsing
     const pipeIdx = b.assignedTime.indexOf("|");
-    const range = pipeIdx !== -1 ? b.assignedTime.slice(pipeIdx + 1) : b.assignedTime;
+    if (pipeIdx === -1) continue;
+    const assignedSlotId = parseInt(b.assignedTime.slice(0, pipeIdx), 10);
+    if (isNaN(assignedSlotId)) continue;
+    const range = b.assignedTime.slice(pipeIdx + 1);
     const dashIdx = range.indexOf("-");
     if (dashIdx === -1) continue;
-    grouped.get(b.timeSlotId)!.push({ start: range.slice(0, dashIdx), end: range.slice(dashIdx + 1) });
+    const entry = grouped.get(assignedSlotId) ?? [];
+    entry.push({ start: range.slice(0, dashIdx), end: range.slice(dashIdx + 1) });
+    grouped.set(assignedSlotId, entry);
   }
 
   for (const [slotId, blocked] of grouped) {
