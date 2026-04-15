@@ -2824,11 +2824,6 @@ export default function Teacher() {
                   </>
                 )}
 
-                {/* Weekly calendar at the bottom of the schedule tab */}
-                <div>
-                  <h3 className="font-semibold text-foreground text-base mb-3">Weekly Schedule & Bookings</h3>
-                  <WeeklyCalendar />
-                </div>
 
               </div>
             </motion.div>
