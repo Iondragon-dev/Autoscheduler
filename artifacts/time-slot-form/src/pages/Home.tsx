@@ -67,20 +67,27 @@ function generateStartTimes(
   durationMins: number,
   blockedTimes: { start: string; end: string }[],
 ): string[] {
+  return generateAllStartTimes(slotStart, slotEnd, durationMins, blockedTimes)
+    .filter(t => !t.blocked)
+    .map(t => t.time);
+}
+
+function generateAllStartTimes(
+  slotStart: string,
+  slotEnd: string,
+  durationMins: number,
+  blockedTimes: { start: string; end: string }[],
+): { time: string; blocked: boolean }[] {
   const winStart = toMins(slotStart);
   const winEnd = toMins(slotEnd);
   const STEP = 15;
   const seen = new Set<string>();
-  const times: string[] = [];
+  const times: { time: string; blocked: boolean }[] = [];
   for (let t = winStart; t + durationMins <= winEnd; t += STEP) {
     const tEnd = t + durationMins;
-    const blocked = blockedTimes.some(
-      bt => t < toMins(bt.end) && tEnd > toMins(bt.start),
-    );
-    if (!blocked) {
-      const s = fromMins(t);
-      if (!seen.has(s)) { seen.add(s); times.push(s); }
-    }
+    const blocked = blockedTimes.some(bt => t < toMins(bt.end) && tEnd > toMins(bt.start));
+    const s = fromMins(t);
+    if (!seen.has(s)) { seen.add(s); times.push({ time: s, blocked }); }
   }
   return times;
 }
@@ -726,9 +733,10 @@ export default function Home() {
                       const c = choices[choiceIdx];
                       const slot = availableSlots.find(s => s.id === c.slotId);
                       const dur = getEffectiveDuration(c);
-                      const times = slot && dur
-                        ? generateStartTimes(slot.startTime, slot.endTime, dur, slot.blockedTimes ?? [])
+                      const allTimes = slot && dur
+                        ? generateAllStartTimes(slot.startTime, slot.endTime, dur, slot.blockedTimes ?? [])
                         : [];
+                      const availableTimes = allTimes.filter(t => !t.blocked);
                       // Times already chosen in other preferences for the same slot
                       const alreadyPicked = new Set(
                         choices
@@ -753,7 +761,7 @@ export default function Home() {
                             </p>
                           </div>
 
-                          {times.length === 0 ? (
+                          {allTimes.length === 0 ? (
                             <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm flex gap-2 items-start">
                               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                               <span>
@@ -762,8 +770,14 @@ export default function Home() {
                             </div>
                           ) : (
                             <>
+                              {availableTimes.length === 0 && (
+                                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm flex gap-2 items-start">
+                                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                                  <span>All times for this duration are taken. Go back and choose a shorter session or a different day.</span>
+                                </div>
+                              )}
                               <div className="flex flex-wrap gap-2 max-h-72 overflow-y-auto pr-1">
-                                {times.map(t => {
+                                {allTimes.map(({ time: t, blocked: isScheduled }) => {
                                 const endStr = fromMins(toMins(t) + dur!);
                                 const sel = c.start === t;
                                 const taken = alreadyPicked.has(t);
@@ -771,20 +785,22 @@ export default function Home() {
                                   <button
                                     key={t}
                                     type="button"
-                                    disabled={taken}
-                                    onClick={() => !taken && updateChoice(choiceIdx, { start: t })}
-                                    title={taken ? "Already chosen as another preference" : undefined}
+                                    disabled={taken || isScheduled}
+                                    onClick={() => !taken && !isScheduled && updateChoice(choiceIdx, { start: t })}
+                                    title={isScheduled ? "This time is already taken" : taken ? "Already chosen as another preference" : undefined}
                                     className={cn(
                                       "flex flex-col items-center px-3.5 py-2.5 rounded-xl border-2 transition-all",
-                                      taken
-                                        ? "border-border/30 bg-muted/40 text-muted-foreground/40 cursor-not-allowed line-through"
-                                        : sel
-                                          ? "border-primary bg-primary/10 text-primary"
-                                          : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 text-foreground",
+                                      isScheduled
+                                        ? "border-rose-200 bg-rose-50 text-rose-300 cursor-not-allowed"
+                                        : taken
+                                          ? "border-border/30 bg-muted/40 text-muted-foreground/40 cursor-not-allowed line-through"
+                                          : sel
+                                            ? "border-primary bg-primary/10 text-primary"
+                                            : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5 text-foreground",
                                     )}
                                   >
-                                    <span className="text-sm font-bold">{fmt12(t)}</span>
-                                    <span className="text-[10px]">{taken ? "chosen" : `to ${fmt12(endStr)}`}</span>
+                                    <span className={cn("text-sm font-bold", isScheduled && "line-through decoration-rose-300")}>{fmt12(t)}</span>
+                                    <span className="text-[10px]">{isScheduled ? "taken" : taken ? "chosen" : `to ${fmt12(endStr)}`}</span>
                                   </button>
                                 );
                               })}
