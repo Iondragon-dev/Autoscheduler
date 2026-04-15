@@ -126,6 +126,7 @@ export default function Home() {
   const [editReturnToDetails, setEditReturnToDetails] = useState(false);
   const [showBillboard, setShowBillboard] = useState(true);
   const [expandedSlotId, setExpandedSlotId] = useState<number | null>(null);
+  const [showBillboardEditPrompt, setShowBillboardEditPrompt] = useState(false);
 
   const [choices, setChoices] = useState<Choice[]>([
     { slotId: null, duration: null, isCustomDuration: false, customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "" },
@@ -303,6 +304,30 @@ export default function Home() {
       if (!applyEditMode(booking)) { setEditLookupError("Couldn't load your previous choices. Please try again."); return; }
       if (booking.name) setName(booking.name);
       if (booking.email) setEmail(booking.email);
+    } catch {
+      setEditLookupError("Network error. Please try again.");
+    } finally {
+      setIsEditLoading(false);
+    }
+  };
+
+  const handleBillboardEditLookup = async () => {
+    const emailStr = editEmailInput.trim().toLowerCase();
+    if (!emailStr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr)) {
+      setEditLookupError("Please enter a valid email address.");
+      return;
+    }
+    setIsEditLoading(true);
+    setEditLookupError(null);
+    try {
+      const res = await fetch(`/api/bookings/lookup?email=${encodeURIComponent(emailStr)}&slug=${encodeURIComponent(slug ?? "")}`);
+      if (res.status === 404) { setEditLookupError("No submission found for that email."); return; }
+      if (!res.ok) { setEditLookupError("Something went wrong. Please try again."); return; }
+      const booking = await res.json() as { id: number; priority1: string; priority2: string; priority3: string; name?: string; email?: string };
+      if (!applyEditMode(booking)) { setEditLookupError("Couldn't load your previous choices. Please try again."); return; }
+      if (booking.name) setName(booking.name);
+      if (booking.email) setEmail(booking.email);
+      setShowBillboard(false);
     } catch {
       setEditLookupError("Network error. Please try again.");
     } finally {
@@ -603,14 +628,69 @@ export default function Home() {
                 {slots.length > 0 && !slots.some(s => s.available) && (
                   <p className="text-center text-xs text-muted-foreground">No slots are currently open for booking.</p>
                 )}
-                <div className="text-center">
+
+                {/* Edit existing submission */}
+                <div className="border border-border/50 rounded-2xl overflow-hidden">
                   <button
                     type="button"
-                    onClick={() => { setShowBillboard(false); setShowEditEmailPrompt(true); }}
-                    className="text-xs text-muted-foreground/70 hover:text-muted-foreground underline underline-offset-2 transition-colors"
+                    onClick={() => {
+                      setShowBillboardEditPrompt(p => !p);
+                      setEditEmailInput("");
+                      setEditLookupError(null);
+                    }}
+                    className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
                   >
-                    Already submitted? Edit your request instead
+                    <span className="flex items-center gap-2">
+                      <Pencil className="w-3.5 h-3.5" />
+                      Already submitted? Edit your request
+                    </span>
+                    <motion.div
+                      animate={{ rotate: showBillboardEditPrompt ? 180 : 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <ChevronDown className="w-4 h-4" />
+                    </motion.div>
                   </button>
+
+                  <AnimatePresence initial={false}>
+                    {showBillboardEditPrompt && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-4 pb-4 pt-1 border-t border-border/40 space-y-3">
+                          <p className="text-xs text-muted-foreground">
+                            Enter the email you used when submitting.
+                          </p>
+                          <Input
+                            type="email"
+                            placeholder="your@email.com"
+                            value={editEmailInput}
+                            onChange={e => { setEditEmailInput(e.target.value); setEditLookupError(null); }}
+                            onKeyDown={e => e.key === "Enter" && handleBillboardEditLookup()}
+                            className="h-9 text-sm"
+                          />
+                          {editLookupError && (
+                            <p className="text-xs text-destructive flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3 shrink-0" />
+                              {editLookupError}
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleBillboardEditLookup}
+                            disabled={isEditLoading}
+                            className="w-full py-2.5 rounded-xl bg-foreground text-background text-sm font-semibold hover:opacity-80 active:scale-[0.98] transition-all disabled:opacity-40"
+                          >
+                            {isEditLoading ? "Looking up…" : "Find my submission"}
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             </motion.div>
