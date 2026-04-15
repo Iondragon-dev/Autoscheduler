@@ -19,6 +19,7 @@ type ApiSlot = {
   endTime: string;
   available: boolean;
   blockedTimes: { start: string; end: string }[] | null;
+  bookedSessions: { start: string; end: string; name: string }[];
 };
 
 type TeacherSlotData = {
@@ -491,8 +492,8 @@ export default function Home() {
                   [...slots]
                     .sort((a, b) => slotDayRank(a.label) - slotDayRank(b.label))
                     .map(slot => {
-                      const blocked = slot.blockedTimes ?? [];
-                      const booked = blocked.length;
+                      const sessions = slot.bookedSessions ?? [];
+                      const booked = sessions.length;
                       const isExpanded = expandedSlotId === slot.id;
                       const isClickable = booked > 0 && slot.available;
                       return (
@@ -564,13 +565,17 @@ export default function Home() {
                                   <p className="text-[11px] font-semibold text-amber-700/70 uppercase tracking-wide mb-2 mt-2">
                                     Booked windows
                                   </p>
-                                  <div className="space-y-1">
-                                    {[...blocked]
+                                  <div className="space-y-1.5">
+                                    {[...sessions]
                                       .sort((a, b) => a.start.localeCompare(b.start))
-                                      .map((bt, i) => (
-                                        <div key={i} className="flex items-center gap-2 text-xs text-amber-800">
+                                      .map((s, i) => (
+                                        <div key={i} className="flex items-center gap-2.5 text-xs">
                                           <Clock className="w-3 h-3 shrink-0 text-amber-500" />
-                                          <span>{fmt12(bt.start)} – {fmt12(bt.end)}</span>
+                                          <span className="text-amber-900 font-medium tabular-nums">
+                                            {fmt12(s.start)} – {fmt12(s.end)}
+                                          </span>
+                                          <span className="text-muted-foreground">·</span>
+                                          <span className="text-foreground font-semibold truncate">{s.name}</span>
                                         </div>
                                       ))
                                     }

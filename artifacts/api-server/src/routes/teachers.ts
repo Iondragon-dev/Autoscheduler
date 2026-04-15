@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, teachersTable, timeSlotsTable, bookingsTable } from "@workspace/db";
-import { eq, isNull, inArray } from "drizzle-orm";
+import { eq, isNull, inArray, isNotNull } from "drizzle-orm";
 import { requireTeacherSession } from "./auth";
 
 const router = Router();
@@ -22,9 +22,38 @@ router.get("/teachers/:slug/timeslots", async (req, res) => {
   }
   const teacher = rows[0];
   const slots = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.teacherId, teacher.id));
+
+  // Fetch assigned bookings to attach student names to blocked windows
+  const slotIds = slots.map(s => s.id);
+  const assignedBookings = slotIds.length
+    ? await db
+        .select({ name: bookingsTable.name, assignedTime: bookingsTable.assignedTime, timeSlotId: bookingsTable.timeSlotId })
+        .from(bookingsTable)
+        .where(inArray(bookingsTable.timeSlotId, slotIds))
+        .then(rows => rows.filter(r => r.assignedTime !== null))
+    : [];
+
+  // Map slotId -> [{ start, end, name }]
+  const namesBySlot = new Map<number, { start: string; end: string; name: string }[]>();
+  for (const b of assignedBookings) {
+    if (!b.assignedTime || !b.timeSlotId) continue;
+    const pipeIdx = b.assignedTime.indexOf("|");
+    const range = pipeIdx !== -1 ? b.assignedTime.slice(pipeIdx + 1) : b.assignedTime;
+    const dashIdx = range.indexOf("-");
+    if (dashIdx === -1) continue;
+    const start = range.slice(0, dashIdx);
+    const end = range.slice(dashIdx + 1);
+    const arr = namesBySlot.get(b.timeSlotId) ?? [];
+    arr.push({ start, end, name: b.name });
+    namesBySlot.set(b.timeSlotId, arr);
+  }
+
   res.json({
     teacher: { id: teacher.id, name: teacher.name, slug: teacher.slug, subject: teacher.subject },
-    slots,
+    slots: slots.map(s => ({
+      ...s,
+      bookedSessions: namesBySlot.get(s.id) ?? [],
+    })),
   });
 });
 
