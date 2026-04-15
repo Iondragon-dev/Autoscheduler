@@ -189,7 +189,14 @@ router.put("/bookings/:id", async (req, res) => {
     .set({ priority1, priority2, priority3, assignedPriority: null, assignedTime: null })
     .where(eq(bookingsTable.id, id))
     .returning();
-  await syncBlockedTimes([existing.timeSlotId]);
+  // Re-run scheduler for all unassigned bookings, with this student processed last
+  const slotRow = await db.select({ teacherId: timeSlotsTable.teacherId })
+    .from(timeSlotsTable).where(eq(timeSlotsTable.id, existing.timeSlotId)).limit(1);
+  if (slotRow[0]?.teacherId) {
+    await scheduleUnassigned(slotRow[0].teacherId, id);
+  } else {
+    await syncBlockedTimes([existing.timeSlotId]);
+  }
   res.json(updated);
 });
 
@@ -456,6 +463,100 @@ async function syncBlockedTimes(slotIds: number[]) {
       .set({ blockedTimes: blocked.length > 0 ? blocked : null })
       .where(eq(timeSlotsTable.id, slotId));
   }
+}
+
+// Run the scheduler over all currently unassigned bookings for a teacher,
+// forcing `lastBookingId` to be processed last (lowest priority).
+async function scheduleUnassigned(teacherId: number, lastBookingId: number) {
+  const allSlots = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.teacherId, teacherId));
+  const slotIds = allSlots.map(s => s.id);
+  if (slotIds.length === 0) return;
+
+  const allBookings = await db.select().from(bookingsTable)
+    .where(inArray(bookingsTable.timeSlotId, slotIds))
+    .orderBy(bookingsTable.createdAt);
+
+  const toMins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m ?? 0); };
+  const parsePri = (p: string | null | undefined) => {
+    if (!p || !p.includes("|")) return null;
+    const pi = p.indexOf("|");
+    const slotId = parseInt(p.slice(0, pi));
+    if (isNaN(slotId)) return null;
+    const range = p.slice(pi + 1);
+    const di = range.indexOf("-");
+    if (di === -1) return null;
+    return { slotId, startMins: toMins(range.slice(0, di)), endMins: toMins(range.slice(di + 1)), key: p };
+  };
+
+  // Pre-populate already-assigned intervals so we don't double-book
+  const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
+  const overlaps = (slotId: number, s: number, e: number) =>
+    (assignedBySlot.get(slotId) ?? []).some(iv => s < iv.end && e > iv.start);
+  const mark = (slotId: number, s: number, e: number) => {
+    if (!assignedBySlot.has(slotId)) assignedBySlot.set(slotId, []);
+    assignedBySlot.get(slotId)!.push({ start: s, end: e });
+  };
+
+  for (const b of allBookings) {
+    if (!b.assignedTime) continue;
+    const p = parsePri(b.assignedTime);
+    if (p) mark(p.slotId, p.startMins, p.endMins);
+  }
+
+  // Only schedule unassigned bookings; lastBookingId goes last
+  const pending = allBookings
+    .filter(b => b.assignedTime === null)
+    .map(b => ({
+      bookingId: b.id,
+      timeSlotId: b.timeSlotId,
+      priorities: [b.priority1, b.priority2, b.priority3].map(parsePri),
+      isLast: b.id === lastBookingId,
+    }));
+
+  const assignments = new Map<number, { priority: number; time: string }>();
+  const unassigned = new Set(pending.map(b => b.bookingId));
+
+  while (unassigned.size > 0) {
+    let best: typeof pending[0] | null = null;
+    let bestAvail = Infinity;
+    let bestDays = Infinity;
+
+    for (const entry of pending) {
+      if (!unassigned.has(entry.bookingId)) continue;
+      if (entry.isLast && unassigned.size > 1) continue; // force last
+
+      const avail = entry.priorities.filter(
+        p => p && allSlots.some(s => s.id === p.slotId) && !overlaps(p.slotId, p.startMins, p.endMins)
+      );
+      const days = new Set(avail.map(p => allSlots.find(s => s.id === p!.slotId)?.label ?? p!.slotId)).size;
+      const n = avail.length;
+      if (days < bestDays || (days === bestDays && n < bestAvail)) {
+        bestAvail = n; bestDays = days; best = entry;
+      }
+    }
+
+    if (!best) break;
+    unassigned.delete(best.bookingId);
+    if (bestAvail === 0) continue;
+
+    for (const p of best.priorities) {
+      if (!p || !allSlots.find(s => s.id === p.slotId) || overlaps(p.slotId, p.startMins, p.endMins)) continue;
+      assignments.set(best.bookingId, { priority: best.priorities.indexOf(p) + 1, time: p.key });
+      mark(p.slotId, p.startMins, p.endMins);
+      break;
+    }
+  }
+
+  // Persist new assignments
+  const affectedSlots = new Set<number>();
+  for (const b of pending) {
+    const a = assignments.get(b.bookingId);
+    await db.update(bookingsTable)
+      .set({ assignedPriority: a?.priority ?? null, assignedTime: a?.time ?? null })
+      .where(eq(bookingsTable.id, b.bookingId));
+    affectedSlots.add(b.timeSlotId);
+  }
+  if (affectedSlots.size > 0) await syncBlockedTimes([...affectedSlots]);
 }
 
 router.post("/bookings/apply-schedule", requireTeacherSession, async (req, res) => {
