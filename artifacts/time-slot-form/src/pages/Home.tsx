@@ -153,7 +153,15 @@ export default function Home() {
     };
   }, [page]);
 
-  const availableSlots = (slots ?? []).filter(s => s.available);
+  const DAY_ORDER = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+  const slotDayRank = (label: string) => {
+    const day = DAY_ORDER.find(d => label.startsWith(d));
+    return day ? DAY_ORDER.indexOf(day) : 999;
+  };
+  const availableSlots = (slots ?? [])
+    .filter(s => s.available)
+    .slice()
+    .sort((a, b) => slotDayRank(a.label) - slotDayRank(b.label));
 
   const isDetails = page === 9;
   const choiceIdx = Math.min(Math.floor(page / 3), 2);
@@ -558,14 +566,8 @@ export default function Home() {
                                       : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5",
                                   )}
                                 >
-                                  <div>
-                                    <div className={cn("font-semibold text-sm", sel ? "text-primary" : "text-foreground")}>
-                                      {slot.label}
-                                    </div>
-                                    <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                                      <Clock className="w-3 h-3" />
-                                      {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
-                                    </div>
+                                  <div className={cn("font-semibold text-sm", sel ? "text-primary" : "text-foreground")}>
+                                    {slot.label}
                                   </div>
                                   <div className={cn(
                                     "w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
