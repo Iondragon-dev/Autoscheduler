@@ -80,7 +80,7 @@ router.post("/timeslots", requireTeacherSession, async (req, res) => {
         if (dayOfLabel(s.label) !== newDay) return false;
         const sStart = toMins(s.startTime);
         const sEnd = toMins(s.endTime);
-        return !(newEnd <= sStart || newStart >= sEnd);
+        return !(newEnd < sStart || newStart > sEnd);
       })
     : [];
 
