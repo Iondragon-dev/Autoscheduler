@@ -41,6 +41,26 @@ export function makeValue(slotId: number, start: string, end: string) {
   return `${slotId}|${start}-${end}`;
 }
 
+export function generateAllStartTimes(
+  slotStart: string,
+  slotEnd: string,
+  durationMins: number,
+  blockedTimes: { start: string; end: string }[],
+): { time: string; blocked: boolean }[] {
+  const winStart = toMins(slotStart);
+  const winEnd = toMins(slotEnd);
+  const STEP = 15;
+  const seen = new Set<string>();
+  const times: { time: string; blocked: boolean }[] = [];
+  for (let t = winStart; t + durationMins <= winEnd; t += STEP) {
+    const tEnd = t + durationMins;
+    const blocked = blockedTimes.some(bt => t < toMins(bt.end) && tEnd > toMins(bt.start));
+    const s = fromMins(t);
+    if (!seen.has(s)) { seen.add(s); times.push({ time: s, blocked }); }
+  }
+  return times;
+}
+
 export function getSubBlocks(slot: TimeSlot, stepMins: number) {
   const start = toMins(slot.startTime);
   const end = toMins(slot.endTime);

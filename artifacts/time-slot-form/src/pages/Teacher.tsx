@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
 import { signOutTeacher, getTeacherInfo } from "./TeacherGate";
-import { fmt12, fmtPriority, toMins, fromMins } from "@/lib/booking-utils";
+import { fmt12, fmtPriority, toMins, fromMins, generateAllStartTimes } from "@/lib/booking-utils";
 import JSZip from "jszip";
 
 async function adminFetch(url: string, options?: RequestInit): Promise<Response> {
@@ -2028,6 +2028,9 @@ export default function Teacher() {
   type EditOverride = { assignedPriority: number | null; assignedTime: string | null; assignedSlotLabel: string | null; assignedTimeRange: string | null };
   const [editOverrides, setEditOverrides] = useState<Record<number, EditOverride>>({});
   const [editingRow, setEditingRow] = useState<number | null>(null);
+  const [editingAssignId, setEditingAssignId] = useState<number | null>(null);
+  const [assignDraft, setAssignDraft] = useState<{ slotId: number | null; start: string | null }>({ slotId: null, start: null });
+  const [isSavingAssign, setIsSavingAssign] = useState(false);
 
   const effectivePreview = schedulePreview?.map(r => {
     const ov = editOverrides[r.bookingId];
@@ -2561,13 +2564,156 @@ export default function Teacher() {
                   <h2 className="font-bold text-foreground text-lg flex items-center gap-2">
                     <ClipboardList className="w-5 h-5 text-primary" />Applied Schedule
                   </h2>
-                  <p className="text-sm text-muted-foreground mt-1">Students currently assigned to their time slots.</p>
+                  <p className="text-sm text-muted-foreground mt-1">Students currently assigned to their time slots. Click the pencil to reassign.</p>
                 </div>
                 {(() => {
                   type ExtBooking = (typeof bookings extends (infer T)[] | undefined ? T : never) & { assignedTime: string | null; assignedPriority: number | null };
                   const all = (bookings ?? []) as ExtBooking[];
                   const assigned = all.filter((b) => b.assignedTime);
                   const unassigned = all.filter((b) => !b.assignedTime);
+
+                  const saveAssignment = async (bookingId: number) => {
+                    if (!assignDraft.slotId || !assignDraft.start) return;
+                    const draftSlot = (slots ?? []).find(s => s.id === assignDraft.slotId);
+                    if (!draftSlot) return;
+                    const durationMins = toMins(draftSlot.endTime) - toMins(draftSlot.startTime);
+                    const endStr = fromMins(toMins(assignDraft.start) + durationMins);
+                    // Detect if start matches one of the student's preferences
+                    const bk = all.find(b => b.id === bookingId);
+                    let assignedPriority: number | null = null;
+                    if (bk) {
+                      [bk.priority1, bk.priority2, bk.priority3].forEach((p, i) => {
+                        if (!p) return;
+                        const pipe = p.indexOf("|");
+                        const prefSlotId = pipe !== -1 ? parseInt(p.slice(0, pipe), 10) : null;
+                        const prefStart = pipe !== -1 ? p.slice(pipe + 1).split("-")[0] : null;
+                        if (prefSlotId === assignDraft.slotId && prefStart === assignDraft.start && assignedPriority === null) {
+                          assignedPriority = i + 1;
+                        }
+                      });
+                    }
+                    const assignedTime = `${assignDraft.slotId}|${assignDraft.start}-${endStr}`;
+                    setIsSavingAssign(true);
+                    try {
+                      await adminFetch(`${import.meta.env.BASE_URL}api/bookings/${bookingId}/assignment`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ assignedTime, assignedPriority }),
+                      });
+                      setEditingAssignId(null);
+                      refetchBookings();
+                    } finally {
+                      setIsSavingAssign(false);
+                    }
+                  };
+
+                  const clearAssignment = async (bookingId: number) => {
+                    setIsSavingAssign(true);
+                    try {
+                      await adminFetch(`${import.meta.env.BASE_URL}api/bookings/${bookingId}/assignment`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ assignedTime: null, assignedPriority: null }),
+                      });
+                      setEditingAssignId(null);
+                      refetchBookings();
+                    } finally {
+                      setIsSavingAssign(false);
+                    }
+                  };
+
+                  const startEdit = (b: ExtBooking) => {
+                    if (b.assignedTime) {
+                      const pipe = b.assignedTime.indexOf("|");
+                      const slotId = parseInt(b.assignedTime.slice(0, pipe), 10);
+                      const start = b.assignedTime.slice(pipe + 1).split("-")[0];
+                      setAssignDraft({ slotId, start });
+                    } else {
+                      setAssignDraft({ slotId: null, start: null });
+                    }
+                    setEditingAssignId(b.id);
+                  };
+
+                  const EditPanel = ({ b }: { b: ExtBooking }) => {
+                    const draftSlot = (slots ?? []).find(s => s.id === assignDraft.slotId);
+                    const availableTimes = draftSlot
+                      ? generateAllStartTimes(draftSlot.startTime, draftSlot.endTime, toMins(draftSlot.endTime) - toMins(draftSlot.startTime), draftSlot.blockedTimes ?? [])
+                      : [];
+                    const canSave = assignDraft.slotId !== null && assignDraft.start !== null;
+                    return (
+                      <div className="mt-2 pt-2 border-t border-border/40 space-y-3">
+                        <div className="space-y-1.5">
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Assign to slot</p>
+                          <select
+                            value={assignDraft.slotId ?? ""}
+                            onChange={e => setAssignDraft({ slotId: Number(e.target.value) || null, start: null })}
+                            className="w-full text-sm bg-background border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          >
+                            <option value="">— choose a slot —</option>
+                            {(slots ?? []).filter(s => s.available).map(s => (
+                              <option key={s.id} value={s.id}>{s.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        {draftSlot && (
+                          <div className="space-y-1.5">
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Time</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {availableTimes.length === 0 ? (
+                                <p className="text-xs text-muted-foreground italic">No available times for this slot.</p>
+                              ) : availableTimes.map(({ time: t, blocked }) => {
+                                const dur = toMins(draftSlot.endTime) - toMins(draftSlot.startTime);
+                                const endStr = fromMins(toMins(t) + dur);
+                                const sel = assignDraft.start === t;
+                                return (
+                                  <button
+                                    key={t}
+                                    type="button"
+                                    disabled={blocked}
+                                    onClick={() => !blocked && setAssignDraft(d => ({ ...d, start: t }))}
+                                    className={cn(
+                                      "flex flex-col items-center px-2.5 py-1.5 rounded-lg border text-xs transition-all",
+                                      blocked ? "border-rose-200 bg-rose-50 text-rose-300 cursor-not-allowed" :
+                                      sel ? "border-primary bg-primary/10 text-primary" :
+                                      "border-border bg-background hover:border-primary/40 text-foreground"
+                                    )}
+                                  >
+                                    <span className="font-semibold">{fmt12(t)}</span>
+                                    <span className="text-[9px] text-muted-foreground">{blocked ? "taken" : `– ${fmt12(endStr)}`}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            onClick={() => saveAssignment(b.id)}
+                            disabled={!canSave || isSavingAssign}
+                            className="flex items-center gap-1.5 text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 transition-all"
+                          >
+                            {isSavingAssign ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}Save
+                          </button>
+                          {b.assignedTime && (
+                            <button
+                              onClick={() => clearAssignment(b.id)}
+                              disabled={isSavingAssign}
+                              className="flex items-center gap-1.5 text-xs text-destructive border border-destructive/30 px-3 py-1.5 rounded-lg font-semibold hover:bg-destructive/5 disabled:opacity-50 transition-all"
+                            >
+                              <X className="w-3 h-3" />Remove
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setEditingAssignId(null)}
+                            className="ml-auto text-xs text-muted-foreground hover:text-foreground transition-all"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  };
+
                   if (all.length === 0) {
                     return (
                       <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
@@ -2576,16 +2722,13 @@ export default function Teacher() {
                       </div>
                     );
                   }
-                  if (assigned.length === 0) {
+                  if (assigned.length === 0 && unassigned.length > 0 && editingAssignId === null) {
                     return (
                       <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
                         <ClipboardList className="w-10 h-10 text-muted-foreground/30" />
                         <p className="text-muted-foreground font-medium">No schedule has been applied yet.</p>
                         <p className="text-sm text-muted-foreground/70">Run Auto-Schedule and click Apply to assign students.</p>
-                        <button
-                          onClick={() => setTab("schedule")}
-                          className="mt-1 flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
-                        >
+                        <button onClick={() => setTab("schedule")} className="mt-1 flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
                           <Wand2 className="w-4 h-4" />Go to Auto-Schedule
                         </button>
                       </div>
@@ -2606,6 +2749,41 @@ export default function Teacher() {
                     const di = ALL_DAYS.indexOf(a.day) - ALL_DAYS.indexOf(b.day);
                     return di !== 0 ? di : a.timeRange.localeCompare(b.timeRange);
                   });
+
+                  const StudentCard = ({ b, bg }: { b: ExtBooking; bg?: string }) => {
+                    const isEditing = editingAssignId === b.id;
+                    return (
+                      <div className={cn("p-2.5 rounded-lg border border-border/40 space-y-0", bg ?? "bg-muted/30")}>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs shrink-0">
+                            {b.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-foreground truncate">{b.name}</div>
+                            <div className="text-xs text-muted-foreground truncate">{b.email}</div>
+                          </div>
+                          {!isEditing && b.assignedTime && (() => {
+                            const range = b.assignedTime.slice(b.assignedTime.indexOf("|") + 1);
+                            const [start, end] = range.split("-");
+                            return (
+                              <span className="text-xs font-semibold text-muted-foreground shrink-0 tabular-nums">
+                                {fmt12(start)} – {fmt12(end)}
+                              </span>
+                            );
+                          })()}
+                          <button
+                            onClick={() => isEditing ? setEditingAssignId(null) : startEdit(b)}
+                            className="shrink-0 p-1 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                            title={isEditing ? "Cancel edit" : "Reassign"}
+                          >
+                            {isEditing ? <X className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                        {isEditing && <EditPanel b={b} />}
+                      </div>
+                    );
+                  };
+
                   return (
                     <div className="space-y-3">
                       {sorted.map(({ slotLabel, students }) => (
@@ -2616,26 +2794,7 @@ export default function Teacher() {
                             <span className="ml-auto text-xs text-muted-foreground">{students.length} student{students.length !== 1 ? "s" : ""}</span>
                           </div>
                           <div className="space-y-2">
-                            {students.map((b) => (
-                              <div key={b.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/30 border border-border/40">
-                                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs shrink-0">
-                                  {b.name.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm font-semibold text-foreground truncate">{b.name}</div>
-                                  <div className="text-xs text-muted-foreground truncate">{b.email}</div>
-                                </div>
-                                {b.assignedTime && (() => {
-                                  const range = b.assignedTime.slice(b.assignedTime.indexOf("|") + 1);
-                                  const [start, end] = range.split("-");
-                                  return (
-                                    <span className="text-xs font-semibold text-muted-foreground shrink-0 tabular-nums">
-                                      {fmt12(start)} – {fmt12(end)}
-                                    </span>
-                                  );
-                                })()}
-                              </div>
-                            ))}
+                            {students.map((b) => <StudentCard key={b.id} b={b} />)}
                           </div>
                         </div>
                       ))}
@@ -2647,17 +2806,7 @@ export default function Teacher() {
                             <span className="ml-auto text-xs text-muted-foreground">{unassigned.length} student{unassigned.length !== 1 ? "s" : ""}</span>
                           </div>
                           <div className="space-y-2">
-                            {unassigned.map((b) => (
-                              <div key={b.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/40">
-                                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-muted-foreground font-bold text-xs shrink-0">
-                                  {b.name.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm font-semibold text-foreground truncate">{b.name}</div>
-                                  <div className="text-xs text-muted-foreground truncate">{b.email}</div>
-                                </div>
-                              </div>
-                            ))}
+                            {unassigned.map((b) => <StudentCard key={b.id} b={b} bg="bg-background" />)}
                           </div>
                         </div>
                       )}

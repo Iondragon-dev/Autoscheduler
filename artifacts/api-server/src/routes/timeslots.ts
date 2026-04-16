@@ -630,6 +630,23 @@ router.post("/bookings/apply-schedule", requireTeacherSession, async (req, res) 
   res.json({ ok: true });
 });
 
+router.patch("/bookings/:id/assignment", requireTeacherSession, async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ message: "Invalid id" }); return; }
+  const slotIds = await getTeacherSlotIds(res.locals.teacherId);
+  if (slotIds.length === 0) { res.status(404).json({ message: "Booking not found." }); return; }
+  const [booking] = await db.select().from(bookingsTable)
+    .where(and(eq(bookingsTable.id, id), inArray(bookingsTable.timeSlotId, slotIds)))
+    .limit(1);
+  if (!booking) { res.status(404).json({ message: "Booking not found." }); return; }
+  const { assignedTime, assignedPriority } = req.body as { assignedTime: string | null; assignedPriority: number | null };
+  await db.update(bookingsTable)
+    .set({ assignedTime: assignedTime ?? null, assignedPriority: assignedPriority ?? null })
+    .where(eq(bookingsTable.id, id));
+  await syncBlockedTimes(slotIds);
+  res.json({ ok: true });
+});
+
 router.delete("/bookings/schedule", requireTeacherSession, async (_req, res) => {
   const slotIds = await getTeacherSlotIds(res.locals.teacherId);
   if (slotIds.length > 0) {
