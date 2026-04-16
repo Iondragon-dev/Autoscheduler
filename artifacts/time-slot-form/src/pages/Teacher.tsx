@@ -2601,11 +2601,15 @@ export default function Teacher() {
                                   <div className="text-sm font-semibold text-foreground truncate">{b.name}</div>
                                   <div className="text-xs text-muted-foreground truncate">{b.email}</div>
                                 </div>
-                                {b.assignedPriority != null && (
-                                  <span className={cn("text-xs font-bold shrink-0", PRIORITY_COLORS[b.assignedPriority - 1])}>
-                                    {["1st", "2nd", "3rd"][b.assignedPriority - 1] ?? `#${b.assignedPriority}`} choice
-                                  </span>
-                                )}
+                                {b.assignedTime && (() => {
+                                  const range = b.assignedTime.slice(b.assignedTime.indexOf("|") + 1);
+                                  const [start, end] = range.split("-");
+                                  return (
+                                    <span className="text-xs font-semibold text-muted-foreground shrink-0 tabular-nums">
+                                      {fmt12(start)} – {fmt12(end)}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                             ))}
                           </div>
