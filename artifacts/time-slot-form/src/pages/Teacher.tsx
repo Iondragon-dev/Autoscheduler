@@ -2635,58 +2635,47 @@ export default function Teacher() {
                   };
 
                   const EditPanel = ({ b }: { b: ExtBooking }) => {
-                    const draftSlot = (slots ?? []).find(s => s.id === assignDraft.slotId);
-                    const availableTimes = draftSlot
-                      ? generateAllStartTimes(draftSlot.startTime, draftSlot.endTime, toMins(draftSlot.endTime) - toMins(draftSlot.startTime), draftSlot.blockedTimes ?? [])
-                      : [];
+                    const prefs = ([b.priority1, b.priority2, b.priority3] as (string | null | undefined)[]).filter(Boolean) as string[];
                     const canSave = assignDraft.slotId !== null && assignDraft.start !== null;
+                    const LABELS = ["1st choice", "2nd choice", "3rd choice"];
                     return (
-                      <div className="mt-2 pt-2 border-t border-border/40 space-y-3">
-                        <div className="space-y-1.5">
-                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Assign to slot</p>
-                          <select
-                            value={assignDraft.slotId ?? ""}
-                            onChange={e => setAssignDraft({ slotId: Number(e.target.value) || null, start: null })}
-                            className="w-full text-sm bg-background border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          >
-                            <option value="">— choose a slot —</option>
-                            {(slots ?? []).filter(s => s.available).map(s => (
-                              <option key={s.id} value={s.id}>{s.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                        {draftSlot && (
+                      <div className="mt-2 pt-2 border-t border-border/40 space-y-2.5">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Student's preferences</p>
+                        {prefs.length === 0 ? (
+                          <p className="text-xs text-muted-foreground italic">No preferences submitted.</p>
+                        ) : (
                           <div className="space-y-1.5">
-                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Time</p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {availableTimes.length === 0 ? (
-                                <p className="text-xs text-muted-foreground italic">No available times for this slot.</p>
-                              ) : availableTimes.map(({ time: t, blocked }) => {
-                                const dur = toMins(draftSlot.endTime) - toMins(draftSlot.startTime);
-                                const endStr = fromMins(toMins(t) + dur);
-                                const sel = assignDraft.start === t;
-                                return (
-                                  <button
-                                    key={t}
-                                    type="button"
-                                    disabled={blocked}
-                                    onClick={() => !blocked && setAssignDraft(d => ({ ...d, start: t }))}
-                                    className={cn(
-                                      "flex flex-col items-center px-2.5 py-1.5 rounded-lg border text-xs transition-all",
-                                      blocked ? "border-rose-200 bg-rose-50 text-rose-300 cursor-not-allowed" :
-                                      sel ? "border-primary bg-primary/10 text-primary" :
-                                      "border-border bg-background hover:border-primary/40 text-foreground"
-                                    )}
-                                  >
-                                    <span className="font-semibold">{fmt12(t)}</span>
-                                    <span className="text-[9px] text-muted-foreground">{blocked ? "taken" : `– ${fmt12(endStr)}`}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
+                            {prefs.map((p, i) => {
+                              const pipe = p.indexOf("|");
+                              const slotId = parseInt(p.slice(0, pipe), 10);
+                              const range = p.slice(pipe + 1);
+                              const [start, end] = range.split("-");
+                              const slot = (slots ?? []).find(s => s.id === slotId);
+                              const sel = assignDraft.slotId === slotId && assignDraft.start === start;
+                              return (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  onClick={() => setAssignDraft({ slotId, start })}
+                                  className={cn(
+                                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg border text-sm transition-all text-left",
+                                    sel ? "border-primary bg-primary/10" : "border-border bg-background hover:border-primary/40"
+                                  )}
+                                >
+                                  <span className={cn("text-[10px] font-bold uppercase tracking-wider shrink-0 w-16", sel ? "text-primary" : "text-muted-foreground")}>
+                                    {LABELS[i]}
+                                  </span>
+                                  <span className="flex-1 min-w-0">
+                                    <span className={cn("font-semibold", sel ? "text-primary" : "text-foreground")}>{slot?.label ?? `Slot ${slotId}`}</span>
+                                    <span className="text-muted-foreground ml-2 tabular-nums text-xs">{fmt12(start)} – {fmt12(end)}</span>
+                                  </span>
+                                  {sel && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
-                        <div className="flex items-center gap-2 pt-1">
+                        <div className="flex items-center gap-2 pt-0.5">
                           <button
                             onClick={() => saveAssignment(b.id)}
                             disabled={!canSave || isSavingAssign}
