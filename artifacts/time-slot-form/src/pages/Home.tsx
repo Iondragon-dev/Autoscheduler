@@ -1032,9 +1032,20 @@ export default function Home() {
                           .filter(ch => ch.slotId === c.slotId && ch.start !== null)
                           .map(ch => ch.start!)
                       );
-                      const customTimeError = c.isCustomTime && c.customTimeStr && slot && dur
-                        ? validateCustomTime(c.customTimeStr, slot.startTime, slot.endTime, dur, slot.blockedTimes ?? [])
-                        : null;
+                      const customTimeError = (() => {
+                        if (!c.isCustomTime || !c.customTimeStr || !slot || !dur) return null;
+                        const base = validateCustomTime(c.customTimeStr, slot.startTime, slot.endTime, dur, slot.blockedTimes ?? []);
+                        if (base) return base;
+                        const customStart = toMins(c.customTimeStr);
+                        const customEnd = customStart + dur;
+                        for (const picked of alreadyPicked) {
+                          const ps = toMins(picked);
+                          if (customStart < ps + dur && customEnd > ps) {
+                            return "That time overlaps with one of your other chosen preferences.";
+                          }
+                        }
+                        return null;
+                      })();
 
                       return (
                         <>
