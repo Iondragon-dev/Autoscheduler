@@ -2400,6 +2400,13 @@ export default function Teacher() {
                       const isExpanded = expandedSlotId === slot.id;
                       const hasBookings = slotBookings.length > 0;
                       const blockedTimes = slot.blockedTimes ?? [];
+                      const appointmentRanges = new Set(
+                        (bookings ?? [])
+                          .filter(b => (b as any).assignedTime?.startsWith(`${slot.id}|`))
+                          .map(b => { const at = (b as any).assignedTime as string; return at.slice(at.indexOf("|") + 1); })
+                      );
+                      const appointmentBlocks = blockedTimes.filter(bt => appointmentRanges.has(`${bt.start}-${bt.end}`));
+                      const manualBlocks = blockedTimes.filter(bt => !appointmentRanges.has(`${bt.start}-${bt.end}`));
                       const hasBlocked = blockedTimes.length > 0;
                       const isExpandable = hasBookings || hasBlocked;
                       return (
@@ -2450,25 +2457,42 @@ export default function Teacher() {
                               <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
                                 <div className="border-t border-border mx-4 mb-3" />
                                 <div className="px-4 pb-4 space-y-4">
-                                  {hasBlocked && (
+                                  {appointmentBlocks.length > 0 && (
+                                    <div>
+                                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                        <CheckCheck className="w-3 h-3 text-primary" /> Appointment Times
+                                      </p>
+                                      <div className="flex flex-wrap gap-2">
+                                        {appointmentBlocks.map((bt, bti) => (
+                                          <div key={bti} className="flex items-center gap-1.5 bg-primary/8 border border-primary/25 text-primary rounded-lg px-2.5 py-1 text-xs font-medium">
+                                            <span>{fmt12(bt.start)} – {fmt12(bt.end)}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {manualBlocks.length > 0 && (
                                     <div>
                                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                         <Ban className="w-3 h-3 text-orange-500" /> Blocked Times
                                       </p>
                                       <div className="flex flex-wrap gap-2">
-                                        {blockedTimes.map((bt, bti) => (
-                                          <div key={bti} className="flex items-center gap-1.5 bg-orange-50 border border-orange-200 text-orange-700 rounded-lg px-2.5 py-1 text-xs font-medium">
-                                            <span>{fmt12(bt.start)} – {fmt12(bt.end)}</span>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleRemoveBlockedTime(slot.id, bti)}
-                                              className="ml-0.5 text-orange-400 hover:text-orange-600 transition-colors"
-                                              title="Remove blocked time"
-                                            >
-                                              <X className="w-3 h-3" />
-                                            </button>
-                                          </div>
-                                        ))}
+                                        {manualBlocks.map((bt, bti) => {
+                                          const globalIdx = blockedTimes.indexOf(bt);
+                                          return (
+                                            <div key={bti} className="flex items-center gap-1.5 bg-orange-50 border border-orange-200 text-orange-700 rounded-lg px-2.5 py-1 text-xs font-medium">
+                                              <span>{fmt12(bt.start)} – {fmt12(bt.end)}</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleRemoveBlockedTime(slot.id, globalIdx)}
+                                                className="ml-0.5 text-orange-400 hover:text-orange-600 transition-colors"
+                                                title="Remove blocked time"
+                                              >
+                                                <X className="w-3 h-3" />
+                                              </button>
+                                            </div>
+                                          );
+                                        })}
                                       </div>
                                     </div>
                                   )}
