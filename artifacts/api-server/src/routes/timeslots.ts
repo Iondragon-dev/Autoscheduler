@@ -17,6 +17,12 @@ function serializeSlot(s: typeof timeSlotsTable.$inferSelect) {
   };
 }
 
+const ALL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const toMins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m ?? 0); };
+const fromMins = (mins: number) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+const fmt12 = (t: string) => { const [hStr, mStr] = t.split(":"); const h = parseInt(hStr, 10); const m = parseInt(mStr, 10); const ap = h < 12 ? "AM" : "PM"; const h12 = h % 12 || 12; return `${h12}:${m.toString().padStart(2, "0")} ${ap}`; };
+const dayOfLabel = (lbl: string) => ALL_DAYS.find(d => lbl.startsWith(d)) ?? null;
+
 async function getTeacherSlotIds(teacherId: number): Promise<number[]> {
   const slots = await db.select({ id: timeSlotsTable.id }).from(timeSlotsTable).where(eq(timeSlotsTable.teacherId, teacherId));
   return slots.map(s => s.id);
@@ -58,11 +64,50 @@ router.post("/timeslots", requireTeacherSession, async (req, res) => {
     return;
   }
   const { label, startTime, endTime } = parsed.data;
-  const toMins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m ?? 0); };
   if (toMins(startTime) >= toMins(endTime)) {
     res.status(400).json({ message: "Start time must be before end time." });
     return;
   }
+
+  const newStart = toMins(startTime);
+  const newEnd = toMins(endTime);
+  const newDay = dayOfLabel(label);
+
+  // Find existing slots on the same day that overlap with the new slot
+  const existing = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.teacherId, res.locals.teacherId));
+  const overlapping = newDay
+    ? existing.filter(s => {
+        if (dayOfLabel(s.label) !== newDay) return false;
+        const sStart = toMins(s.startTime);
+        const sEnd = toMins(s.endTime);
+        return !(newEnd <= sStart || newStart >= sEnd);
+      })
+    : [];
+
+  if (overlapping.length > 0) {
+    // Compute the union of all overlapping ranges + the new slot
+    const mergedStartMins = Math.min(newStart, ...overlapping.map(s => toMins(s.startTime)));
+    const mergedEndMins   = Math.max(newEnd,   ...overlapping.map(s => toMins(s.endTime)));
+    const mergedStart = fromMins(mergedStartMins);
+    const mergedEnd   = fromMins(mergedEndMins);
+    const mergedLabel = `${newDay} ${fmt12(mergedStart)} – ${fmt12(mergedEnd)}`;
+
+    // Keep the first overlapping slot as the primary; delete the rest
+    const [primary, ...extras] = overlapping;
+    if (extras.length > 0) {
+      const extraIds = extras.map(s => s.id);
+      await db.update(bookingsTable).set({ timeSlotId: primary.id }).where(inArray(bookingsTable.timeSlotId, extraIds));
+      await db.delete(timeSlotsTable).where(inArray(timeSlotsTable.id, extraIds));
+    }
+    const [merged] = await db.update(timeSlotsTable)
+      .set({ label: mergedLabel, startTime: mergedStart, endTime: mergedEnd })
+      .where(eq(timeSlotsTable.id, primary.id))
+      .returning();
+    res.status(201).json(serializeSlot(merged));
+    return;
+  }
+
+  // No overlap — insert normally
   const [slot] = await db.insert(timeSlotsTable).values({ label, startTime, endTime, available: true, teacherId: res.locals.teacherId }).returning();
   res.status(201).json(serializeSlot(slot));
 });
@@ -83,10 +128,9 @@ router.patch("/timeslots/:id", requireTeacherSession, async (req, res) => {
   if (parsed.data.startTime !== undefined) updates.startTime = parsed.data.startTime;
   if (parsed.data.endTime !== undefined) updates.endTime = parsed.data.endTime;
 
-  const toMinsLocal = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m ?? 0); };
   const effectiveStart = updates.startTime ?? existing[0].startTime;
   const effectiveEnd = updates.endTime ?? existing[0].endTime;
-  if (toMinsLocal(effectiveStart) >= toMinsLocal(effectiveEnd)) {
+  if (toMins(effectiveStart) >= toMins(effectiveEnd)) {
     res.status(400).json({ message: "Start time must be before end time." });
     return;
   }
