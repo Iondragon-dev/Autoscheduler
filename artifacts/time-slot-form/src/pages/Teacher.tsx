@@ -12,7 +12,7 @@ import {
   Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft,
   AlertCircle, Calendar, ChevronDown, Mail, User, Sparkles, X,
   Bot, CheckCircle2, ArrowRight, Loader2, KeyRound, Eye, EyeOff, Ban, Upload,
-  Wand2, CheckCheck, RotateCcw, TriangleAlert, Pencil,
+  Wand2, CheckCheck, RotateCcw, TriangleAlert, Pencil, ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1978,7 +1978,7 @@ export default function Teacher() {
   const updateSlot = useUpdateTimeSlot();
   const deleteSlot = useDeleteTimeSlot();
 
-  const [tab, setTab] = useState<"slots" | "calendar" | "schedule">("slots");
+  const [tab, setTab] = useState<"slots" | "calendar" | "schedule" | "applied">("slots");
   const [showAddForm, setShowAddForm] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deleteAllConfirm, setDeleteAllConfirm] = useState(false);
@@ -2261,6 +2261,22 @@ export default function Teacher() {
             </span>
           </button>
           <button
+            onClick={() => setTab("applied")}
+            className={cn(
+              "px-5 py-2 rounded-full text-sm font-semibold transition-all",
+              tab === "applied" ? "bg-primary text-primary-foreground shadow" : "bg-card/80 text-muted-foreground hover:text-foreground border border-border"
+            )}
+          >
+            <span className="flex items-center gap-1.5">
+              <ClipboardList className="w-4 h-4" />Applied Schedule
+              {(bookings ?? []).some((b) => (b as any).assignedTime) && (
+                <span className="ml-1 bg-green-500/20 text-green-600 text-xs px-1.5 py-0.5 rounded-full font-bold">
+                  {(bookings ?? []).filter((b) => (b as any).assignedTime).length}
+                </span>
+              )}
+            </span>
+          </button>
+          <button
             onClick={() => setTab("schedule")}
             className={cn(
               "px-5 py-2 rounded-full text-sm font-semibold transition-all",
@@ -2511,6 +2527,115 @@ export default function Teacher() {
               <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-lg p-5">
                 <h2 className="font-bold text-foreground text-lg mb-4">Weekly Schedule & Bookings</h2>
                 <WeeklyCalendar />
+              </div>
+            </motion.div>
+          )}
+          {tab === "applied" && (
+            <motion.div key="applied" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.25 }}>
+              <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-lg p-5 space-y-4">
+                <div>
+                  <h2 className="font-bold text-foreground text-lg flex items-center gap-2">
+                    <ClipboardList className="w-5 h-5 text-primary" />Applied Schedule
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">Students currently assigned to their time slots.</p>
+                </div>
+                {(() => {
+                  type ExtBooking = (typeof bookings extends (infer T)[] | undefined ? T : never) & { assignedTime: string | null; assignedPriority: number | null };
+                  const all = (bookings ?? []) as ExtBooking[];
+                  const assigned = all.filter((b) => b.assignedTime);
+                  const unassigned = all.filter((b) => !b.assignedTime);
+                  if (all.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+                        <Users className="w-10 h-10 text-muted-foreground/30" />
+                        <p className="text-muted-foreground font-medium">No students have registered yet.</p>
+                      </div>
+                    );
+                  }
+                  if (assigned.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+                        <ClipboardList className="w-10 h-10 text-muted-foreground/30" />
+                        <p className="text-muted-foreground font-medium">No schedule has been applied yet.</p>
+                        <p className="text-sm text-muted-foreground/70">Run Auto-Schedule and click Apply to assign students.</p>
+                        <button
+                          onClick={() => setTab("schedule")}
+                          className="mt-1 flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
+                        >
+                          <Wand2 className="w-4 h-4" />Go to Auto-Schedule
+                        </button>
+                      </div>
+                    );
+                  }
+                  const groups = new Map<number, { slotLabel: string; day: string; timeRange: string; students: ExtBooking[] }>();
+                  for (const b of assigned) {
+                    const pipe = b.assignedTime!.indexOf("|");
+                    const slotId = parseInt(b.assignedTime!.slice(0, pipe), 10);
+                    const timeRange = b.assignedTime!.slice(pipe + 1);
+                    const slot = (slots ?? []).find((s) => s.id === slotId);
+                    const slotLabel = slot?.label ?? `Slot ${slotId}`;
+                    const day = dayOfSlot(slotLabel);
+                    if (!groups.has(slotId)) groups.set(slotId, { slotLabel, day, timeRange, students: [] });
+                    groups.get(slotId)!.students.push(b);
+                  }
+                  const sorted = [...groups.values()].sort((a, b) => {
+                    const di = ALL_DAYS.indexOf(a.day) - ALL_DAYS.indexOf(b.day);
+                    return di !== 0 ? di : a.timeRange.localeCompare(b.timeRange);
+                  });
+                  return (
+                    <div className="space-y-3">
+                      {sorted.map(({ slotLabel, students }) => (
+                        <div key={slotLabel} className="rounded-xl border border-border bg-card p-4 space-y-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
+                            <span className="font-semibold text-sm text-foreground">{slotLabel}</span>
+                            <span className="ml-auto text-xs text-muted-foreground">{students.length} student{students.length !== 1 ? "s" : ""}</span>
+                          </div>
+                          <div className="space-y-2">
+                            {students.map((b) => (
+                              <div key={b.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/30 border border-border/40">
+                                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs shrink-0">
+                                  {b.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-semibold text-foreground truncate">{b.name}</div>
+                                  <div className="text-xs text-muted-foreground truncate">{b.email}</div>
+                                </div>
+                                {b.assignedPriority != null && (
+                                  <span className={cn("text-xs font-bold shrink-0", PRIORITY_COLORS[b.assignedPriority - 1])}>
+                                    {["1st", "2nd", "3rd"][b.assignedPriority - 1] ?? `#${b.assignedPriority}`} choice
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      {unassigned.length > 0 && (
+                        <div className="rounded-xl border border-dashed border-border bg-muted/10 p-4 space-y-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full bg-muted-foreground/40 shrink-0" />
+                            <span className="font-semibold text-sm text-muted-foreground">Unassigned</span>
+                            <span className="ml-auto text-xs text-muted-foreground">{unassigned.length} student{unassigned.length !== 1 ? "s" : ""}</span>
+                          </div>
+                          <div className="space-y-2">
+                            {unassigned.map((b) => (
+                              <div key={b.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/40">
+                                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-muted-foreground font-bold text-xs shrink-0">
+                                  {b.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-semibold text-foreground truncate">{b.name}</div>
+                                  <div className="text-xs text-muted-foreground truncate">{b.email}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </motion.div>
           )}
