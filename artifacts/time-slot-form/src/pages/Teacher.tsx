@@ -2431,9 +2431,14 @@ export default function Teacher() {
                                 <span className={cn("flex items-center gap-1 font-medium", hasBookings ? "text-primary" : "text-muted-foreground")}>
                                   <Users className="w-3 h-3" />{slotBookings.length} {slotBookings.length === 1 ? "booking" : "bookings"}
                                 </span>
-                                {hasBlocked && (
+                                {appointmentBlocks.length > 0 && (
+                                  <span className="flex items-center gap-1 font-medium text-primary">
+                                    <CheckCheck className="w-3 h-3" />{appointmentBlocks.length} {appointmentBlocks.length === 1 ? "appointment" : "appointments"}
+                                  </span>
+                                )}
+                                {manualBlocks.length > 0 && (
                                   <span className="flex items-center gap-1 font-medium text-orange-500">
-                                    <Ban className="w-3 h-3" />{blockedTimes.length} blocked
+                                    <Ban className="w-3 h-3" />{manualBlocks.length} {manualBlocks.length === 1 ? "blocked" : "blocked"}
                                   </span>
                                 )}
                               </div>
