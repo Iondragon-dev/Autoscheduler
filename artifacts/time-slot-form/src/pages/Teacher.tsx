@@ -501,6 +501,20 @@ type EditOp =
   | { op: "delete"; slotId: number };
 
 
+function isFullyBlocked(startTime: string, endTime: string, blockedTimes: { start: string; end: string }[]): boolean {
+  if (!blockedTimes.length) return false;
+  const start = toMins(startTime);
+  const end = toMins(endTime);
+  const sorted = [...blockedTimes].sort((a, b) => toMins(a.start) - toMins(b.start));
+  let covered = start;
+  for (const bt of sorted) {
+    if (toMins(bt.start) > covered) break;
+    covered = Math.max(covered, toMins(bt.end));
+    if (covered >= end) return true;
+  }
+  return false;
+}
+
 function genTimeOptions(startTime: string, endTime: string, stepMins = 30): string[] {
   const opts: string[] = [];
   for (let t = toMins(startTime); t <= toMins(endTime); t += stepMins) opts.push(fromMins(t));
@@ -2442,12 +2456,19 @@ export default function Teacher() {
                       const manualBlocks = blockedTimes.filter(bt => !appointmentRanges.has(`${bt.start}-${bt.end}`));
                       const hasBlocked = blockedTimes.length > 0;
                       const isExpandable = hasBookings || hasBlocked;
+                      const fullyBlocked = slot.available && isFullyBlocked(slot.startTime, slot.endTime, blockedTimes);
                       return (
                         <motion.div key={slot.id} layout initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className={cn("rounded-xl border overflow-hidden transition-all", slot.available ? "bg-card border-border" : "bg-muted/50 border-dashed border-muted-foreground/40")}>
                           {!slot.available && (
                             <div className="flex items-center gap-1.5 px-4 py-1.5 bg-muted-foreground/10 border-b border-dashed border-muted-foreground/20">
                               <EyeOff className="w-3 h-3 text-muted-foreground" />
                               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Hidden from students</span>
+                            </div>
+                          )}
+                          {fullyBlocked && (
+                            <div className="flex items-center gap-1.5 px-4 py-1.5 bg-orange-50 border-b border-orange-200/60">
+                              <Ban className="w-3 h-3 text-orange-500" />
+                              <span className="text-[11px] font-semibold text-orange-600 uppercase tracking-wide">Fully blocked — hidden from students</span>
                             </div>
                           )}
                           <div className="flex items-center p-4 gap-3">
