@@ -2595,11 +2595,50 @@ export default function Teacher() {
           {tab === "applied" && (
             <motion.div key="applied" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.25 }}>
               <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-lg p-5 space-y-4">
-                <div>
-                  <h2 className="font-bold text-foreground text-lg flex items-center gap-2">
-                    <ClipboardList className="w-5 h-5 text-primary" />Applied Schedule
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-1">Students currently assigned to their time slots. Click the pencil to reassign.</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-bold text-foreground text-lg flex items-center gap-2">
+                      <ClipboardList className="w-5 h-5 text-primary" />Applied Schedule
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1">Students currently assigned to their time slots. Click the pencil to reassign.</p>
+                  </div>
+                  {clearScheduleConfirm ? (
+                    <div className="flex items-center gap-2 shrink-0 pt-1">
+                      <span className="text-xs text-muted-foreground">Clear all?</span>
+                      <button
+                        onClick={async () => {
+                          setIsClearingSchedule(true);
+                          try {
+                            await adminFetch(`${import.meta.env.BASE_URL}api/bookings/schedule`, { method: "DELETE" });
+                            setSchedulePreview(null);
+                            setScheduleSummary(null);
+                            setScheduleApplied(false);
+                            setClearScheduleConfirm(false);
+                            setEditOverrides({});
+                            setEditingRow(null);
+                            setEditingAssignId(null);
+                            refetchBookings();
+                          } finally {
+                            setIsClearingSchedule(false);
+                          }
+                        }}
+                        disabled={isClearingSchedule}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-red-500 text-white font-semibold hover:bg-red-600 disabled:opacity-50 transition-all"
+                      >
+                        {isClearingSchedule ? <Loader2 className="w-3 h-3 animate-spin inline" /> : "Yes, clear"}
+                      </button>
+                      <button onClick={() => setClearScheduleConfirm(false)} className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-all">
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setClearScheduleConfirm(true)}
+                      className="shrink-0 flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-3 py-1.5 rounded-lg hover:text-destructive hover:border-destructive/40 transition-all mt-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />Clear
+                    </button>
+                  )}
                 </div>
                 {(() => {
                   type ExtBooking = (typeof bookings extends (infer T)[] | undefined ? T : never) & { assignedTime: string | null; assignedPriority: number | null };
