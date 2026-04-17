@@ -26,6 +26,7 @@ type TeacherSlotData = {
   teacher: { id: number; name: string; slug: string; subject: string | null };
   slots: ApiSlot[];
   unassignedStudents?: { name: string }[];
+  unschedulableStudents?: { name: string }[];
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -114,6 +115,7 @@ export default function Home() {
   const teacher = teacherData?.teacher;
   const slots = teacherData?.slots ?? [];
   const unassignedStudents = teacherData?.unassignedStudents ?? [];
+  const unschedulableStudents = teacherData?.unschedulableStudents ?? [];
 
   const [page, setPage] = useState(0);
   const [direction, setDirection] = useState(1);
@@ -648,20 +650,43 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Unassigned students */}
+              {/* Students not yet through scheduler */}
               {unassignedStudents.length > 0 && (
-                <div className="mx-6 sm:mx-8 rounded-xl border border-dashed border-border/60 bg-muted/20 overflow-hidden">
+                <div className="mx-6 sm:mx-8 rounded-xl border border-dashed border-amber-300/60 bg-amber-50/40 overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-muted-foreground/30 shrink-0" />
-                      <span className="text-sm font-semibold text-muted-foreground">Awaiting Assignment</span>
+                      <div className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                      <span className="text-sm font-semibold text-amber-800">Pending Scheduling</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">{unassignedStudents.length} student{unassignedStudents.length !== 1 ? "s" : ""}</span>
+                    <span className="text-xs text-amber-700">{unassignedStudents.length} student{unassignedStudents.length !== 1 ? "s" : ""}</span>
                   </div>
                   <div className="px-4 pb-3 space-y-1.5">
                     {unassignedStudents.map((s, i) => (
-                      <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-background border border-border/50">
-                        <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-muted-foreground font-bold text-xs shrink-0">
+                      <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white border border-amber-200/60">
+                        <div className="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-xs shrink-0">
+                          {s.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-xs font-semibold text-foreground truncate">{s.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Students who went through scheduler but couldn't be assigned */}
+              {unschedulableStudents.length > 0 && (
+                <div className="mx-6 sm:mx-8 rounded-xl border border-dashed border-rose-200/60 bg-rose-50/40 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-rose-400 shrink-0" />
+                      <span className="text-sm font-semibold text-rose-800">No Slot Available</span>
+                    </div>
+                    <span className="text-xs text-rose-700">{unschedulableStudents.length} student{unschedulableStudents.length !== 1 ? "s" : ""}</span>
+                  </div>
+                  <div className="px-4 pb-3 space-y-1.5">
+                    {unschedulableStudents.map((s, i) => (
+                      <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white border border-rose-200/60">
+                        <div className="w-6 h-6 rounded-full bg-rose-100 flex items-center justify-center text-rose-700 font-bold text-xs shrink-0">
                           {s.name.charAt(0).toUpperCase()}
                         </div>
                         <span className="text-xs font-semibold text-foreground truncate">{s.name}</span>

@@ -465,7 +465,7 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
 
   if (apply) {
     for (const r of results) {
-      await db.update(bookingsTable).set({ assignedPriority: r.assignedPriority, assignedTime: r.assignedTime }).where(eq(bookingsTable.id, r.bookingId));
+      await db.update(bookingsTable).set({ assignedPriority: r.assignedPriority, assignedTime: r.assignedTime, wasScheduled: true }).where(eq(bookingsTable.id, r.bookingId));
     }
   }
 
@@ -623,7 +623,7 @@ router.post("/bookings/apply-schedule", requireTeacherSession, async (req, res) 
   if (slotIds.length === 0) { res.json({ ok: true }); return; }
   for (const r of results) {
     await db.update(bookingsTable)
-      .set({ assignedPriority: r.assignedPriority, assignedTime: r.assignedTime })
+      .set({ assignedPriority: r.assignedPriority, assignedTime: r.assignedTime, wasScheduled: true })
       .where(and(eq(bookingsTable.id, r.bookingId), inArray(bookingsTable.timeSlotId, slotIds)));
   }
   await syncBlockedTimes(slotIds);
@@ -650,7 +650,7 @@ router.patch("/bookings/:id/assignment", requireTeacherSession, async (req, res)
 router.delete("/bookings/schedule", requireTeacherSession, async (_req, res) => {
   const slotIds = await getTeacherSlotIds(res.locals.teacherId);
   if (slotIds.length > 0) {
-    await db.update(bookingsTable).set({ assignedPriority: null, assignedTime: null }).where(inArray(bookingsTable.timeSlotId, slotIds));
+    await db.update(bookingsTable).set({ assignedPriority: null, assignedTime: null, wasScheduled: false }).where(inArray(bookingsTable.timeSlotId, slotIds));
     await syncBlockedTimes(slotIds);
   }
   res.json({ ok: true });

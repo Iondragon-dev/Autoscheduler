@@ -27,12 +27,14 @@ router.get("/teachers/:slug/timeslots", async (req, res) => {
   const slotIds = slots.map(s => s.id);
   const allBookings = slotIds.length
     ? await db
-        .select({ name: bookingsTable.name, assignedTime: bookingsTable.assignedTime, timeSlotId: bookingsTable.timeSlotId })
+        .select({ name: bookingsTable.name, assignedTime: bookingsTable.assignedTime, timeSlotId: bookingsTable.timeSlotId, wasScheduled: bookingsTable.wasScheduled })
         .from(bookingsTable)
         .where(inArray(bookingsTable.timeSlotId, slotIds))
     : [];
   const assignedBookings = allBookings.filter(r => r.assignedTime !== null);
-  const unassignedStudents = allBookings.filter(r => r.assignedTime === null).map(r => ({ name: r.name }));
+  const unassignedAll = allBookings.filter(r => r.assignedTime === null);
+  const unassignedStudents = unassignedAll.filter(r => !r.wasScheduled).map(r => ({ name: r.name }));
+  const unschedulableStudents = unassignedAll.filter(r => r.wasScheduled).map(r => ({ name: r.name }));
 
   // Map slotId -> [{ start, end, name }]
   // Use the slotId encoded in assignedTime ("slotId|HH:MM-HH:MM") — not timeSlotId —
@@ -61,6 +63,7 @@ router.get("/teachers/:slug/timeslots", async (req, res) => {
       bookedSessions: namesBySlot.get(s.id) ?? [],
     })),
     unassignedStudents,
+    unschedulableStudents,
   });
 });
 

@@ -33,6 +33,7 @@ export const bookingsTable = pgTable("bookings", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   assignedPriority: integer("assigned_priority"),
   assignedTime: text("assigned_time"),
+  wasScheduled: boolean("was_scheduled").notNull().default(false),
 });
 
 export const insertBookingSchema = createInsertSchema(bookingsTable).omit({ id: true, createdAt: true });
