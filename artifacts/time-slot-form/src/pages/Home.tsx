@@ -95,6 +95,20 @@ function generateAllStartTimes(
   return times;
 }
 
+function isFullyBlocked(startTime: string, endTime: string, blockedTimes: { start: string; end: string }[]): boolean {
+  if (!blockedTimes.length) return false;
+  const start = toMins(startTime);
+  const end = toMins(endTime);
+  const sorted = [...blockedTimes].sort((a, b) => toMins(a.start) - toMins(b.start));
+  let covered = start;
+  for (const bt of sorted) {
+    if (toMins(bt.start) > covered) break;
+    covered = Math.max(covered, toMins(bt.end));
+    if (covered >= end) return true;
+  }
+  return false;
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -171,7 +185,7 @@ export default function Home() {
     return day ? DAY_ORDER.indexOf(day) : 999;
   };
   const availableSlots = (slots ?? [])
-    .filter(s => s.available)
+    .filter(s => s.available && !isFullyBlocked(s.startTime, s.endTime, s.blockedTimes ?? []))
     .slice()
     .sort((a, b) => slotDayRank(a.label) - slotDayRank(b.label));
 
