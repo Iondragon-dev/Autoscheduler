@@ -193,6 +193,15 @@ router.delete("/bookings", requireTeacherSession, async (_req, res) => {
   res.json({ message: "All bookings cleared" });
 });
 
+router.delete("/bookings/schedule", requireTeacherSession, async (_req, res) => {
+  const slotIds = await getTeacherSlotIds(res.locals.teacherId);
+  if (slotIds.length > 0) {
+    await db.update(bookingsTable).set({ assignedPriority: null, assignedTime: null, wasScheduled: false }).where(inArray(bookingsTable.timeSlotId, slotIds));
+    await syncBlockedTimes(slotIds);
+  }
+  res.json({ ok: true });
+});
+
 router.delete("/bookings/:id", requireTeacherSession, async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ message: "Invalid id" }); return; }
@@ -650,15 +659,6 @@ router.patch("/bookings/:id/assignment", requireTeacherSession, async (req, res)
     .set({ assignedTime: assignedTime ?? null, assignedPriority: assignedPriority ?? null })
     .where(eq(bookingsTable.id, id));
   await syncBlockedTimes(slotIds);
-  res.json({ ok: true });
-});
-
-router.delete("/bookings/schedule", requireTeacherSession, async (_req, res) => {
-  const slotIds = await getTeacherSlotIds(res.locals.teacherId);
-  if (slotIds.length > 0) {
-    await db.update(bookingsTable).set({ assignedPriority: null, assignedTime: null, wasScheduled: false }).where(inArray(bookingsTable.timeSlotId, slotIds));
-    await syncBlockedTimes(slotIds);
-  }
   res.json({ ok: true });
 });
 
