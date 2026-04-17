@@ -463,9 +463,15 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
     };
   });
 
+  // Always mark every processed booking as wasScheduled=true (even in preview mode)
+  // so that the student billboard correctly shows them as "went through scheduler"
+  const processedIds = results.map(r => r.bookingId);
+  if (processedIds.length > 0) {
+    await db.update(bookingsTable).set({ wasScheduled: true }).where(inArray(bookingsTable.id, processedIds));
+  }
   if (apply) {
     for (const r of results) {
-      await db.update(bookingsTable).set({ assignedPriority: r.assignedPriority, assignedTime: r.assignedTime, wasScheduled: true }).where(eq(bookingsTable.id, r.bookingId));
+      await db.update(bookingsTable).set({ assignedPriority: r.assignedPriority, assignedTime: r.assignedTime }).where(eq(bookingsTable.id, r.bookingId));
     }
   }
 
