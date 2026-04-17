@@ -230,7 +230,7 @@ router.put("/bookings/:id", async (req, res) => {
   if (!existing) { res.status(404).json({ message: "Booking not found" }); return; }
   if (existing.email !== email.toLowerCase().trim()) { res.status(403).json({ message: "Email does not match this booking" }); return; }
   const [updated] = await db.update(bookingsTable)
-    .set({ priority1, priority2, priority3, assignedPriority: null, assignedTime: null })
+    .set({ priority1, priority2, priority3, assignedPriority: null, assignedTime: null, wasScheduled: false })
     .where(eq(bookingsTable.id, id))
     .returning();
   // Re-run scheduler for all unassigned bookings, with this student processed last
