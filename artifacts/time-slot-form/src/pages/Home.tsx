@@ -25,6 +25,7 @@ type ApiSlot = {
 type TeacherSlotData = {
   teacher: { id: number; name: string; slug: string; subject: string | null };
   slots: ApiSlot[];
+  unassignedStudents?: { name: string }[];
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -112,6 +113,7 @@ export default function Home() {
   const queryClient = useQueryClient();
   const teacher = teacherData?.teacher;
   const slots = teacherData?.slots ?? [];
+  const unassignedStudents = teacherData?.unassignedStudents ?? [];
 
   const [page, setPage] = useState(0);
   const [direction, setDirection] = useState(1);
@@ -645,6 +647,29 @@ export default function Home() {
                     })
                 )}
               </div>
+
+              {/* Unassigned students */}
+              {unassignedStudents.length > 0 && (
+                <div className="mx-6 sm:mx-8 rounded-xl border border-dashed border-border/60 bg-muted/20 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-muted-foreground/30 shrink-0" />
+                      <span className="text-sm font-semibold text-muted-foreground">Awaiting Assignment</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">{unassignedStudents.length} student{unassignedStudents.length !== 1 ? "s" : ""}</span>
+                  </div>
+                  <div className="px-4 pb-3 space-y-1.5">
+                    {unassignedStudents.map((s, i) => (
+                      <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-background border border-border/50">
+                        <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-muted-foreground font-bold text-xs shrink-0">
+                          {s.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-xs font-semibold text-foreground truncate">{s.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* CTA */}
               <div className="px-6 sm:px-8 pb-6 pt-1 space-y-3">

@@ -23,15 +23,16 @@ router.get("/teachers/:slug/timeslots", async (req, res) => {
   const teacher = rows[0];
   const slots = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.teacherId, teacher.id));
 
-  // Fetch assigned bookings to attach student names to blocked windows
+  // Fetch all bookings for this teacher's slots
   const slotIds = slots.map(s => s.id);
-  const assignedBookings = slotIds.length
+  const allBookings = slotIds.length
     ? await db
         .select({ name: bookingsTable.name, assignedTime: bookingsTable.assignedTime, timeSlotId: bookingsTable.timeSlotId })
         .from(bookingsTable)
         .where(inArray(bookingsTable.timeSlotId, slotIds))
-        .then(rows => rows.filter(r => r.assignedTime !== null))
     : [];
+  const assignedBookings = allBookings.filter(r => r.assignedTime !== null);
+  const unassignedStudents = allBookings.filter(r => r.assignedTime === null).map(r => ({ name: r.name }));
 
   // Map slotId -> [{ start, end, name }]
   // Use the slotId encoded in assignedTime ("slotId|HH:MM-HH:MM") — not timeSlotId —
@@ -59,6 +60,7 @@ router.get("/teachers/:slug/timeslots", async (req, res) => {
       ...s,
       bookedSessions: namesBySlot.get(s.id) ?? [],
     })),
+    unassignedStudents,
   });
 });
 
