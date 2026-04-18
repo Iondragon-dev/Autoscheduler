@@ -2186,8 +2186,13 @@ export default function Teacher() {
     updateSlot.mutate({ id, data: { available: !current } }, { onSuccess: () => refetchSlots() });
   };
 
-  const handleToggleHideWhenFull = (id: number, current: boolean) => {
-    updateSlot.mutate({ id, data: { hideWhenFull: !current } }, { onSuccess: () => refetchSlots() });
+  const handleToggleHideWhenFull = async (id: number, current: boolean) => {
+    await adminFetch(`${import.meta.env.BASE_URL}api/timeslots/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hideWhenFull: !current }),
+    });
+    refetchSlots();
   };
 
   const handleDelete = (id: number) => {
