@@ -57,7 +57,7 @@ router.get("/teachers/:slug/timeslots", async (req, res) => {
   }
 
   res.json({
-    teacher: { id: teacher.id, name: teacher.name, slug: teacher.slug, subject: teacher.subject },
+    teacher: { id: teacher.id, name: teacher.name, slug: teacher.slug, subject: teacher.subject, hideFullyBlocked: teacher.hideFullyBlocked },
     slots: slots.map(s => ({
       ...s,
       bookedSessions: namesBySlot.get(s.id) ?? [],
@@ -94,6 +94,21 @@ router.post("/teachers", async (req, res) => {
   await db.update(timeSlotsTable).set({ teacherId: teacher.id }).where(isNull(timeSlotsTable.teacherId));
 
   res.status(201).json({ id: teacher.id, name: teacher.name, slug: teacher.slug, subject: teacher.subject });
+});
+
+router.get("/teachers/me/settings", requireTeacherSession, async (req, res) => {
+  const [teacher] = await db.select({ hideFullyBlocked: teachersTable.hideFullyBlocked }).from(teachersTable).where(eq(teachersTable.id, res.locals.teacherId)).limit(1);
+  res.json({ hideFullyBlocked: teacher?.hideFullyBlocked ?? true });
+});
+
+router.patch("/teachers/me/settings", requireTeacherSession, async (req, res) => {
+  const { hideFullyBlocked } = req.body ?? {};
+  if (typeof hideFullyBlocked !== "boolean") {
+    res.status(400).json({ message: "hideFullyBlocked must be a boolean" });
+    return;
+  }
+  await db.update(teachersTable).set({ hideFullyBlocked }).where(eq(teachersTable.id, res.locals.teacherId));
+  res.json({ ok: true });
 });
 
 router.delete("/teachers/me", requireTeacherSession, async (req, res) => {

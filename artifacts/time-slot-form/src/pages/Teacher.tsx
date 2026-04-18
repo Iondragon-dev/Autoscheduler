@@ -2023,6 +2023,7 @@ export default function Teacher() {
   const deleteSlot = useDeleteTimeSlot();
 
   const [tab, setTab] = useState<"slots" | "calendar" | "schedule" | "applied">("slots");
+  const [hideFullyBlocked, setHideFullyBlocked] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deleteAllConfirm, setDeleteAllConfirm] = useState(false);
@@ -2035,6 +2036,13 @@ export default function Teacher() {
   const [showPasscodeDialog, setShowPasscodeDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showScrollCue, setShowScrollCue] = useState(false);
+
+  useEffect(() => {
+    adminFetch(`${import.meta.env.BASE_URL}api/teachers/me/settings`)
+      .then(r => r.json())
+      .then(d => { if (typeof d.hideFullyBlocked === "boolean") setHideFullyBlocked(d.hideFullyBlocked); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
@@ -2186,13 +2194,14 @@ export default function Teacher() {
     updateSlot.mutate({ id, data: { available: !current } }, { onSuccess: () => refetchSlots() });
   };
 
-  const handleToggleHideWhenFull = async (id: number, current: boolean) => {
-    await adminFetch(`${import.meta.env.BASE_URL}api/timeslots/${id}`, {
+  const handleToggleHideFullyBlocked = async () => {
+    const next = !hideFullyBlocked;
+    setHideFullyBlocked(next);
+    await adminFetch(`${import.meta.env.BASE_URL}api/teachers/me/settings`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hideWhenFull: !current }),
+      body: JSON.stringify({ hideFullyBlocked: next }),
     });
-    refetchSlots();
   };
 
   const handleDelete = (id: number) => {
@@ -2402,6 +2411,19 @@ export default function Teacher() {
                         </button>
                       )
                     )}
+                    <button
+                      onClick={handleToggleHideFullyBlocked}
+                      title={hideFullyBlocked ? "Fully-blocked slots are hidden from students — click to show them" : "Fully-blocked slots are visible to students — click to hide them"}
+                      className={cn(
+                        "flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border transition-all",
+                        hideFullyBlocked
+                          ? "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100"
+                          : "bg-card text-muted-foreground border-border hover:text-foreground"
+                      )}
+                    >
+                      {hideFullyBlocked ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      Auto-hide full
+                    </button>
                     <Button onClick={() => { setShowAddForm((v) => !v); setFormError(null); setDeleteAllConfirm(false); setClearBookingsConfirm(false); }} variant={showAddForm ? "outline" : "default"}>
                       <Plus className="w-4 h-4 mr-1.5" />{showAddForm ? "Cancel" : "Add Slot"}
                     </Button>
@@ -2466,7 +2488,6 @@ export default function Teacher() {
                       const hasBlocked = blockedTimes.length > 0;
                       const isExpandable = hasBookings || hasBlocked;
                       const fullyBlocked = slot.available && isFullyBlocked(slot.startTime, slot.endTime, blockedTimes);
-                      const hideWhenFull = (slot as { hideWhenFull?: boolean }).hideWhenFull !== false;
                       return (
                         <motion.div key={slot.id} layout initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className={cn("rounded-xl border overflow-hidden transition-all", slot.available ? "bg-card border-border" : "bg-muted/50 border-dashed border-muted-foreground/40")}>
                           {!slot.available && (
@@ -2476,26 +2497,11 @@ export default function Teacher() {
                             </div>
                           )}
                           {fullyBlocked && (
-                            <div className="flex items-center justify-between gap-2 px-4 py-1.5 bg-orange-50 border-b border-orange-200/60">
-                              <div className="flex items-center gap-1.5">
-                                <Ban className="w-3 h-3 text-orange-500 shrink-0" />
-                                <span className="text-[11px] font-semibold text-orange-600 uppercase tracking-wide">
-                                  Fully blocked — {hideWhenFull ? "hidden from students" : "still visible to students"}
-                                </span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleToggleHideWhenFull(slot.id, hideWhenFull)}
-                                title={hideWhenFull ? "Allow students to see this slot anyway" : "Hide this slot from students when fully blocked"}
-                                className="shrink-0 flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-md border transition-colors"
-                                style={hideWhenFull
-                                  ? { background: "#f97316", color: "#fff", borderColor: "#ea580c" }
-                                  : { background: "#fff", color: "#9a3412", borderColor: "#fed7aa" }
-                                }
-                              >
-                                {hideWhenFull ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
-                                {hideWhenFull ? "Auto-hide on" : "Auto-hide off"}
-                              </button>
+                            <div className="flex items-center gap-1.5 px-4 py-1.5 bg-orange-50 border-b border-orange-200/60">
+                              <Ban className="w-3 h-3 text-orange-500 shrink-0" />
+                              <span className="text-[11px] font-semibold text-orange-600 uppercase tracking-wide">
+                                Fully blocked — {hideFullyBlocked ? "hidden from students" : "visible to students"}
+                              </span>
                             </div>
                           )}
                           <div className="flex items-center p-4 gap-3">

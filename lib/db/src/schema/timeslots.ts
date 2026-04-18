@@ -9,6 +9,7 @@ export const teachersTable = pgTable("teachers", {
   passcode: text("passcode").notNull(),
   subject: text("subject"),
   email: text("email"),
+  hideFullyBlocked: boolean("hide_fully_blocked").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

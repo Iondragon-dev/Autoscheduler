@@ -24,7 +24,7 @@ type ApiSlot = {
 };
 
 type TeacherSlotData = {
-  teacher: { id: number; name: string; slug: string; subject: string | null };
+  teacher: { id: number; name: string; slug: string; subject: string | null; hideFullyBlocked?: boolean };
   slots: ApiSlot[];
   unassignedStudents?: { name: string }[];
   unschedulableStudents?: { name: string }[];
@@ -185,8 +185,9 @@ export default function Home() {
     const day = DAY_ORDER.find(d => label.startsWith(d));
     return day ? DAY_ORDER.indexOf(day) : 999;
   };
+  const globalHideFullyBlocked = teacherData?.teacher?.hideFullyBlocked !== false;
   const availableSlots = (slots ?? [])
-    .filter(s => s.available && !(s.hideWhenFull !== false && isFullyBlocked(s.startTime, s.endTime, s.blockedTimes ?? [])))
+    .filter(s => s.available && !(globalHideFullyBlocked && isFullyBlocked(s.startTime, s.endTime, s.blockedTimes ?? [])))
     .slice()
     .sort((a, b) => slotDayRank(a.label) - slotDayRank(b.label));
 
