@@ -18,6 +18,7 @@ type ApiSlot = {
   startTime: string;
   endTime: string;
   available: boolean;
+  hideWhenFull: boolean;
   blockedTimes: { start: string; end: string }[] | null;
   bookedSessions: { start: string; end: string; name: string }[];
 };
@@ -185,7 +186,7 @@ export default function Home() {
     return day ? DAY_ORDER.indexOf(day) : 999;
   };
   const availableSlots = (slots ?? [])
-    .filter(s => s.available && !isFullyBlocked(s.startTime, s.endTime, s.blockedTimes ?? []))
+    .filter(s => s.available && !(s.hideWhenFull !== false && isFullyBlocked(s.startTime, s.endTime, s.blockedTimes ?? [])))
     .slice()
     .sort((a, b) => slotDayRank(a.label) - slotDayRank(b.label));
 

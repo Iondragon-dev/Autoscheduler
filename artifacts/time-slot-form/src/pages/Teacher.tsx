@@ -2186,6 +2186,10 @@ export default function Teacher() {
     updateSlot.mutate({ id, data: { available: !current } }, { onSuccess: () => refetchSlots() });
   };
 
+  const handleToggleHideWhenFull = (id: number, current: boolean) => {
+    updateSlot.mutate({ id, data: { hideWhenFull: !current } }, { onSuccess: () => refetchSlots() });
+  };
+
   const handleDelete = (id: number) => {
     deleteSlot.mutate({ id }, {
       onSuccess: () => {
@@ -2457,6 +2461,7 @@ export default function Teacher() {
                       const hasBlocked = blockedTimes.length > 0;
                       const isExpandable = hasBookings || hasBlocked;
                       const fullyBlocked = slot.available && isFullyBlocked(slot.startTime, slot.endTime, blockedTimes);
+                      const hideWhenFull = (slot as { hideWhenFull?: boolean }).hideWhenFull !== false;
                       return (
                         <motion.div key={slot.id} layout initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className={cn("rounded-xl border overflow-hidden transition-all", slot.available ? "bg-card border-border" : "bg-muted/50 border-dashed border-muted-foreground/40")}>
                           {!slot.available && (
@@ -2466,9 +2471,26 @@ export default function Teacher() {
                             </div>
                           )}
                           {fullyBlocked && (
-                            <div className="flex items-center gap-1.5 px-4 py-1.5 bg-orange-50 border-b border-orange-200/60">
-                              <Ban className="w-3 h-3 text-orange-500" />
-                              <span className="text-[11px] font-semibold text-orange-600 uppercase tracking-wide">Fully blocked — hidden from students</span>
+                            <div className="flex items-center justify-between gap-2 px-4 py-1.5 bg-orange-50 border-b border-orange-200/60">
+                              <div className="flex items-center gap-1.5">
+                                <Ban className="w-3 h-3 text-orange-500 shrink-0" />
+                                <span className="text-[11px] font-semibold text-orange-600 uppercase tracking-wide">
+                                  Fully blocked — {hideWhenFull ? "hidden from students" : "still visible to students"}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleHideWhenFull(slot.id, hideWhenFull)}
+                                title={hideWhenFull ? "Allow students to see this slot anyway" : "Hide this slot from students when fully blocked"}
+                                className="shrink-0 flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-md border transition-colors"
+                                style={hideWhenFull
+                                  ? { background: "#f97316", color: "#fff", borderColor: "#ea580c" }
+                                  : { background: "#fff", color: "#9a3412", borderColor: "#fed7aa" }
+                                }
+                              >
+                                {hideWhenFull ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+                                {hideWhenFull ? "Auto-hide on" : "Auto-hide off"}
+                              </button>
                             </div>
                           )}
                           <div className="flex items-center p-4 gap-3">

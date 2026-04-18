@@ -19,6 +19,7 @@ export const timeSlotsTable = pgTable("time_slots", {
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
   available: boolean("available").notNull().default(true),
+  hideWhenFull: boolean("hide_when_full").notNull().default(true),
   blockedTimes: json("blocked_times").$type<Array<{ start: string; end: string }>>(),
 });
 

@@ -13,6 +13,7 @@ function serializeSlot(s: typeof timeSlotsTable.$inferSelect) {
     startTime: s.startTime,
     endTime: s.endTime,
     available: s.available,
+    hideWhenFull: s.hideWhenFull,
     blockedTimes: s.blockedTimes ?? [],
   };
 }
@@ -122,11 +123,17 @@ router.patch("/timeslots/:id", requireTeacherSession, async (req, res) => {
   const parsed = UpdateTimeSlotBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ message: "Invalid request body" }); return; }
 
-  const updates: Partial<{ label: string; startTime: string; endTime: string; available: boolean }> = {};
+  const updates: Partial<{ label: string; startTime: string; endTime: string; available: boolean; hideWhenFull: boolean }> = {};
   if (parsed.data.available !== undefined) updates.available = parsed.data.available;
+  if (parsed.data.hideWhenFull !== undefined) updates.hideWhenFull = parsed.data.hideWhenFull;
   if (parsed.data.label !== undefined) updates.label = parsed.data.label;
   if (parsed.data.startTime !== undefined) updates.startTime = parsed.data.startTime;
   if (parsed.data.endTime !== undefined) updates.endTime = parsed.data.endTime;
+
+  if (Object.keys(updates).length === 0) {
+    res.status(400).json({ message: "No fields to update." });
+    return;
+  }
 
   const effectiveStart = updates.startTime ?? existing[0].startTime;
   const effectiveEnd = updates.endTime ?? existing[0].endTime;

@@ -45,6 +45,7 @@ export const UpdateTimeSlotParams = zod.object({
 
 export const UpdateTimeSlotBody = zod.object({
   available: zod.boolean().optional(),
+  hideWhenFull: zod.boolean().optional(),
   label: zod.string().optional(),
   startTime: zod.string().optional(),
   endTime: zod.string().optional(),
@@ -56,6 +57,7 @@ export const UpdateTimeSlotResponse = zod.object({
   startTime: zod.string(),
   endTime: zod.string(),
   available: zod.boolean(),
+  hideWhenFull: zod.boolean(),
 });
 
 /**

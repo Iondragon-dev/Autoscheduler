@@ -20,6 +20,7 @@ export interface TimeSlot {
   startTime: string;
   endTime: string;
   available: boolean;
+  hideWhenFull: boolean;
   blockedTimes: BlockedTimeRange[];
 }
 
@@ -31,6 +32,7 @@ export interface CreateTimeSlotRequest {
 
 export interface UpdateTimeSlotRequest {
   available?: boolean;
+  hideWhenFull?: boolean;
   label?: string;
   startTime?: string;
   endTime?: string;
