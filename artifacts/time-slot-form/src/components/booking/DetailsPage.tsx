@@ -1,16 +1,10 @@
 import { AlertCircle, Mail, Pencil, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmt12, fromMins, toMins, getEffectiveDuration } from "@/lib/booking-utils";
+import { PRIORITY_LABELS, PRIORITY_COLORS } from "@/lib/booking-constants";
 import { Input } from "@/components/ui/input";
 import { ConflictNotice } from "@/components/ConflictNotice";
 import type { ApiSlot, Choice } from "@/types/booking";
-
-const PRIORITY_LABELS = ["1st", "2nd", "3rd"] as const;
-const PRIORITY_COLORS = [
-  "bg-amber-500/15 text-amber-700 border-amber-400/40",
-  "bg-blue-500/15 text-blue-700 border-blue-400/40",
-  "bg-slate-500/15 text-slate-700 border-slate-400/40",
-] as const;
 
 type Teacher = {
   blockFromAppointments?: boolean;

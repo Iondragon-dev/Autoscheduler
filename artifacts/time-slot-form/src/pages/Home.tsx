@@ -5,6 +5,7 @@ import { useCreateBooking } from "@workspace/api-client-react";
 import type { Booking } from "@workspace/api-client-react";
 import { Link, useParams } from "wouter";
 import { fmt12, fromMins, toMins, getEffectiveDuration, isFullyBlocked } from "@/lib/booking-utils";
+import { PRIORITY_LABELS, DURATION_OPTIONS, TOTAL_PAGES, EMPTY_CHOICE, EMPTY_CHOICES } from "@/lib/booking-constants";
 import type { TeacherSlotData, Choice } from "@/types/booking";
 
 import { Billboard } from "@/components/booking/Billboard";
@@ -15,28 +16,6 @@ import { DetailsPage } from "@/components/booking/DetailsPage";
 import { ConfirmationScreen } from "@/components/booking/ConfirmationScreen";
 import { BookingFormHeader } from "@/components/booking/BookingFormHeader";
 import { BookingFormFooter } from "@/components/booking/BookingFormFooter";
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-const PRIORITY_LABELS = ["1st", "2nd", "3rd"] as const;
-
-const DURATION_OPTIONS = [
-  { label: "10 min", value: 10 },
-  { label: "15 min", value: 15 },
-  { label: "20 min", value: 20 },
-  { label: "30 min", value: 30 },
-  { label: "45 min", value: 45 },
-  { label: "1 hour", value: 60 },
-];
-
-const TOTAL_PAGES = 10;
-
-const EMPTY_CHOICE: Choice = {
-  slotId: null, duration: null, isCustomDuration: false,
-  customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "",
-};
-
-const EMPTY_CHOICES: Choice[] = [{ ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }];
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
