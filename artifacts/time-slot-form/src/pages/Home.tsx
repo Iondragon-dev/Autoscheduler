@@ -10,38 +10,9 @@ import type { Booking } from "@workspace/api-client-react";
 import { Link, useParams } from "wouter";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { fmt12, fromMins, toMins } from "@/lib/booking-utils";
+import { fmt12, fromMins, toMins, generateStartTimes, generateAllStartTimes, isFullyBlocked } from "@/lib/booking-utils";
 import { ConflictNotice } from "@/components/ConflictNotice";
-
-type ApiSlot = {
-  id: number;
-  label: string;
-  startTime: string;
-  endTime: string;
-  available: boolean;
-  hideWhenFull: boolean;
-  blockedTimes: { start: string; end: string }[] | null;
-  bookedSessions: { start: string; end: string; name: string }[];
-};
-
-type TeacherSlotData = {
-  teacher: { id: number; name: string; slug: string; subject: string | null; hideFullyBlocked?: boolean; blockFromAppointments?: boolean };
-  slots: ApiSlot[];
-  unassignedStudents?: { name: string }[];
-  unschedulableStudents?: { name: string }[];
-};
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type Choice = {
-  slotId: number | null;
-  duration: number | null;
-  isCustomDuration: boolean;
-  customDurationStr: string;
-  start: string | null;
-  isCustomTime: boolean;
-  customTimeStr: string;
-};
+import type { ApiSlot, TeacherSlotData, Choice } from "@/types/booking";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -63,53 +34,6 @@ const DURATION_OPTIONS = [
 ];
 
 const TOTAL_PAGES = 10;
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function generateStartTimes(
-  slotStart: string,
-  slotEnd: string,
-  durationMins: number,
-  blockedTimes: { start: string; end: string }[],
-): string[] {
-  return generateAllStartTimes(slotStart, slotEnd, durationMins, blockedTimes)
-    .filter(t => !t.blocked)
-    .map(t => t.time);
-}
-
-function generateAllStartTimes(
-  slotStart: string,
-  slotEnd: string,
-  durationMins: number,
-  blockedTimes: { start: string; end: string }[],
-): { time: string; blocked: boolean }[] {
-  const winStart = toMins(slotStart);
-  const winEnd = toMins(slotEnd);
-  const STEP = 15;
-  const seen = new Set<string>();
-  const times: { time: string; blocked: boolean }[] = [];
-  for (let t = winStart; t + durationMins <= winEnd; t += STEP) {
-    const tEnd = t + durationMins;
-    const blocked = blockedTimes.some(bt => t < toMins(bt.end) && tEnd > toMins(bt.start));
-    const s = fromMins(t);
-    if (!seen.has(s)) { seen.add(s); times.push({ time: s, blocked }); }
-  }
-  return times;
-}
-
-function isFullyBlocked(startTime: string, endTime: string, blockedTimes: { start: string; end: string }[]): boolean {
-  if (!blockedTimes.length) return false;
-  const start = toMins(startTime);
-  const end = toMins(endTime);
-  const sorted = [...blockedTimes].sort((a, b) => toMins(a.start) - toMins(b.start));
-  let covered = start;
-  for (const bt of sorted) {
-    if (toMins(bt.start) > covered) break;
-    covered = Math.max(covered, toMins(bt.end));
-    if (covered >= end) return true;
-  }
-  return false;
-}
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 

@@ -61,6 +61,31 @@ export function generateAllStartTimes(
   return times;
 }
 
+export function generateStartTimes(
+  slotStart: string,
+  slotEnd: string,
+  durationMins: number,
+  blockedTimes: { start: string; end: string }[],
+): string[] {
+  return generateAllStartTimes(slotStart, slotEnd, durationMins, blockedTimes)
+    .filter(t => !t.blocked)
+    .map(t => t.time);
+}
+
+export function isFullyBlocked(startTime: string, endTime: string, blockedTimes: { start: string; end: string }[]): boolean {
+  if (!blockedTimes.length) return false;
+  const start = toMins(startTime);
+  const end = toMins(endTime);
+  const sorted = [...blockedTimes].sort((a, b) => toMins(a.start) - toMins(b.start));
+  let covered = start;
+  for (const bt of sorted) {
+    if (toMins(bt.start) > covered) break;
+    covered = Math.max(covered, toMins(bt.end));
+    if (covered >= end) return true;
+  }
+  return false;
+}
+
 export function getSubBlocks(slot: TimeSlot, stepMins: number) {
   const start = toMins(slot.startTime);
   const end = toMins(slot.endTime);
