@@ -24,7 +24,7 @@ type ApiSlot = {
 };
 
 type TeacherSlotData = {
-  teacher: { id: number; name: string; slug: string; subject: string | null; hideFullyBlocked?: boolean };
+  teacher: { id: number; name: string; slug: string; subject: string | null; hideFullyBlocked?: boolean; blockFromAppointments?: boolean };
   slots: ApiSlot[];
   unassignedStudents?: { name: string }[];
   unschedulableStudents?: { name: string }[];
@@ -1125,6 +1125,13 @@ export default function Home() {
                               Session is <span className="font-semibold text-foreground">{dur} min</span>.
                             </p>
                           </div>
+
+                          {teacher?.blockFromAppointments === false && (
+                            <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-sm">
+                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-sky-500" />
+                              <span>Times shown may already be taken by others — your teacher will confirm your final slot.</span>
+                            </div>
+                          )}
 
                           {allTimes.length === 0 ? (
                             <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm flex gap-2 items-start">
