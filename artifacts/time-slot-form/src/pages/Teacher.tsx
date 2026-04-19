@@ -2024,6 +2024,7 @@ export default function Teacher() {
 
   const [tab, setTab] = useState<"slots" | "calendar" | "schedule" | "applied">("slots");
   const [hideFullyBlocked, setHideFullyBlocked] = useState(true);
+  const [blockFromAppointments, setBlockFromAppointments] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deleteAllConfirm, setDeleteAllConfirm] = useState(false);
@@ -2040,7 +2041,10 @@ export default function Teacher() {
   useEffect(() => {
     adminFetch(`${import.meta.env.BASE_URL}api/teachers/me/settings`)
       .then(r => r.json())
-      .then(d => { if (typeof d.hideFullyBlocked === "boolean") setHideFullyBlocked(d.hideFullyBlocked); })
+      .then(d => {
+        if (typeof d.hideFullyBlocked === "boolean") setHideFullyBlocked(d.hideFullyBlocked);
+        if (typeof d.blockFromAppointments === "boolean") setBlockFromAppointments(d.blockFromAppointments);
+      })
       .catch(() => {});
   }, []);
 
@@ -2202,6 +2206,17 @@ export default function Teacher() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ hideFullyBlocked: next }),
     });
+  };
+
+  const handleToggleBlockFromAppointments = async () => {
+    const next = !blockFromAppointments;
+    setBlockFromAppointments(next);
+    await adminFetch(`${import.meta.env.BASE_URL}api/teachers/me/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockFromAppointments: next }),
+    });
+    refetchSlots();
   };
 
   const handleDelete = (id: number) => {
@@ -2412,6 +2427,19 @@ export default function Teacher() {
                       )
                     )}
                     <button
+                      onClick={handleToggleBlockFromAppointments}
+                      title={blockFromAppointments ? "Appointments block overlapping times — click to allow double-booking" : "Appointments are not blocking times — click to enforce exclusive slots"}
+                      className={cn(
+                        "flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border transition-all",
+                        blockFromAppointments
+                          ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                          : "bg-card text-muted-foreground border-border hover:text-foreground"
+                      )}
+                    >
+                      {blockFromAppointments ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+                      Appt. blocking
+                    </button>
+                    <button
                       onClick={handleToggleHideFullyBlocked}
                       title={hideFullyBlocked ? "Fully-blocked slots are hidden from students — click to show them" : "Fully-blocked slots are visible to students — click to hide them"}
                       className={cn(
@@ -2487,7 +2515,7 @@ export default function Teacher() {
                       const manualBlocks = blockedTimes.filter(bt => !appointmentRanges.has(`${bt.start}-${bt.end}`));
                       const hasBlocked = blockedTimes.length > 0;
                       const isExpandable = hasBookings || hasBlocked;
-                      const fullyBlocked = slot.available && isFullyBlocked(slot.startTime, slot.endTime, blockedTimes);
+                      const fullyBlocked = blockFromAppointments && slot.available && isFullyBlocked(slot.startTime, slot.endTime, blockedTimes);
                       return (
                         <motion.div key={slot.id} layout initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className={cn("rounded-xl border overflow-hidden transition-all", slot.available ? "bg-card border-border" : "bg-muted/50 border-dashed border-muted-foreground/40")}>
                           {!slot.available && (

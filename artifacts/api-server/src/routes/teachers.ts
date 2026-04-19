@@ -57,9 +57,17 @@ router.get("/teachers/:slug/timeslots", async (req, res) => {
   }
 
   res.json({
-    teacher: { id: teacher.id, name: teacher.name, slug: teacher.slug, subject: teacher.subject, hideFullyBlocked: teacher.hideFullyBlocked },
+    teacher: {
+      id: teacher.id,
+      name: teacher.name,
+      slug: teacher.slug,
+      subject: teacher.subject,
+      hideFullyBlocked: teacher.hideFullyBlocked,
+      blockFromAppointments: teacher.blockFromAppointments,
+    },
     slots: slots.map(s => ({
       ...s,
+      blockedTimes: teacher.blockFromAppointments ? (s.blockedTimes ?? []) : [],
       bookedSessions: namesBySlot.get(s.id) ?? [],
     })),
     unassignedStudents,
@@ -97,17 +105,27 @@ router.post("/teachers", async (req, res) => {
 });
 
 router.get("/teachers/me/settings", requireTeacherSession, async (req, res) => {
-  const [teacher] = await db.select({ hideFullyBlocked: teachersTable.hideFullyBlocked }).from(teachersTable).where(eq(teachersTable.id, res.locals.teacherId)).limit(1);
-  res.json({ hideFullyBlocked: teacher?.hideFullyBlocked ?? true });
+  const [teacher] = await db
+    .select({ hideFullyBlocked: teachersTable.hideFullyBlocked, blockFromAppointments: teachersTable.blockFromAppointments })
+    .from(teachersTable)
+    .where(eq(teachersTable.id, res.locals.teacherId))
+    .limit(1);
+  res.json({
+    hideFullyBlocked: teacher?.hideFullyBlocked ?? true,
+    blockFromAppointments: teacher?.blockFromAppointments ?? true,
+  });
 });
 
 router.patch("/teachers/me/settings", requireTeacherSession, async (req, res) => {
-  const { hideFullyBlocked } = req.body ?? {};
-  if (typeof hideFullyBlocked !== "boolean") {
-    res.status(400).json({ message: "hideFullyBlocked must be a boolean" });
+  const { hideFullyBlocked, blockFromAppointments } = req.body ?? {};
+  const updates: Record<string, boolean> = {};
+  if (typeof hideFullyBlocked === "boolean") updates.hideFullyBlocked = hideFullyBlocked;
+  if (typeof blockFromAppointments === "boolean") updates.blockFromAppointments = blockFromAppointments;
+  if (Object.keys(updates).length === 0) {
+    res.status(400).json({ message: "No valid boolean settings provided" });
     return;
   }
-  await db.update(teachersTable).set({ hideFullyBlocked }).where(eq(teachersTable.id, res.locals.teacherId));
+  await db.update(teachersTable).set(updates).where(eq(teachersTable.id, res.locals.teacherId));
   res.json({ ok: true });
 });
 

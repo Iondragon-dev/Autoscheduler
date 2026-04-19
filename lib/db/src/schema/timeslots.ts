@@ -10,6 +10,7 @@ export const teachersTable = pgTable("teachers", {
   subject: text("subject"),
   email: text("email"),
   hideFullyBlocked: boolean("hide_fully_blocked").notNull().default(true),
+  blockFromAppointments: boolean("block_from_appointments").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
