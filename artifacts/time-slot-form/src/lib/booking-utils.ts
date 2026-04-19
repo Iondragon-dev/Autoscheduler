@@ -72,6 +72,14 @@ export function generateStartTimes(
     .map(t => t.time);
 }
 
+export function getEffectiveDuration(c: { isCustomDuration: boolean; customDurationStr: string; duration: number | null }): number | null {
+  if (c.isCustomDuration) {
+    const n = parseInt(c.customDurationStr, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  return c.duration;
+}
+
 export function isFullyBlocked(startTime: string, endTime: string, blockedTimes: { start: string; end: string }[]): boolean {
   if (!blockedTimes.length) return false;
   const start = toMins(startTime);
