@@ -1014,6 +1014,13 @@ export default function Home() {
                             </p>
                           </div>
 
+                          {teacher?.blockFromAppointments === false && (
+                            <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-sm">
+                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-sky-500" />
+                              <span>Times shown may already be taken by others — your teacher will confirm your final slot.</span>
+                            </div>
+                          )}
+
                           <div className="grid grid-cols-3 gap-2">
                             {DURATION_OPTIONS.map(opt => {
                               const sel = !c.isCustomDuration && c.duration === opt.value;
