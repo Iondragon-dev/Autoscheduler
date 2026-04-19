@@ -11,6 +11,7 @@ import { Link, useParams } from "wouter";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { fmt12, fromMins, toMins } from "@/lib/booking-utils";
+import { ConflictNotice } from "@/components/ConflictNotice";
 
 type ApiSlot = {
   id: number;
@@ -108,17 +109,6 @@ function isFullyBlocked(startTime: string, endTime: string, blockedTimes: { star
     if (covered >= end) return true;
   }
   return false;
-}
-
-// ─── Shared sub-components ───────────────────────────────────────────────────
-
-function ConflictNotice() {
-  return (
-    <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-sm">
-      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-sky-500" />
-      <span>Times shown may already be taken by others — your teacher will confirm your final slot.</span>
-    </div>
-  );
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
