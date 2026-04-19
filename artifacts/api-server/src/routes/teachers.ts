@@ -64,6 +64,8 @@ router.get("/teachers/:slug/timeslots", async (req, res) => {
       subject: teacher.subject,
       hideFullyBlocked: teacher.hideFullyBlocked,
       blockFromAppointments: teacher.blockFromAppointments,
+      durationOptions: teacher.durationOptions ?? null,
+      totalPages: teacher.totalPages ?? 10,
     },
     slots: slots.map(s => ({
       ...s,
@@ -106,23 +108,48 @@ router.post("/teachers", async (req, res) => {
 
 router.get("/teachers/me/settings", requireTeacherSession, async (req, res) => {
   const [teacher] = await db
-    .select({ hideFullyBlocked: teachersTable.hideFullyBlocked, blockFromAppointments: teachersTable.blockFromAppointments })
+    .select({
+      hideFullyBlocked: teachersTable.hideFullyBlocked,
+      blockFromAppointments: teachersTable.blockFromAppointments,
+      durationOptions: teachersTable.durationOptions,
+      totalPages: teachersTable.totalPages,
+    })
     .from(teachersTable)
     .where(eq(teachersTable.id, res.locals.teacherId))
     .limit(1);
   res.json({
     hideFullyBlocked: teacher?.hideFullyBlocked ?? true,
     blockFromAppointments: teacher?.blockFromAppointments ?? true,
+    durationOptions: teacher?.durationOptions ?? null,
+    totalPages: teacher?.totalPages ?? 10,
   });
 });
 
+function isValidDurationOption(item: unknown): item is { label: string; value: number } {
+  if (!item || typeof item !== "object") return false;
+  const o = item as Record<string, unknown>;
+  return (
+    typeof o.label === "string" && o.label.trim().length > 0 &&
+    typeof o.value === "number" && Number.isInteger(o.value) && o.value >= 1 && o.value <= 480
+  );
+}
+
 router.patch("/teachers/me/settings", requireTeacherSession, async (req, res) => {
-  const { hideFullyBlocked, blockFromAppointments } = req.body ?? {};
-  const updates: Record<string, boolean> = {};
+  const { hideFullyBlocked, blockFromAppointments, durationOptions } = req.body ?? {};
+  const updates: Record<string, unknown> = {};
   if (typeof hideFullyBlocked === "boolean") updates.hideFullyBlocked = hideFullyBlocked;
   if (typeof blockFromAppointments === "boolean") updates.blockFromAppointments = blockFromAppointments;
+  if (durationOptions === null) {
+    updates.durationOptions = null;
+  } else if (Array.isArray(durationOptions)) {
+    if (!durationOptions.every(isValidDurationOption)) {
+      res.status(400).json({ message: "Each duration option must have a non-empty label and an integer value between 1 and 480." });
+      return;
+    }
+    updates.durationOptions = durationOptions;
+  }
   if (Object.keys(updates).length === 0) {
-    res.status(400).json({ message: "No valid boolean settings provided" });
+    res.status(400).json({ message: "No valid settings provided" });
     return;
   }
   await db.update(teachersTable).set(updates).where(eq(teachersTable.id, res.locals.teacherId));

@@ -9,8 +9,22 @@ export type ApiSlot = {
   bookedSessions: { start: string; end: string; name: string }[];
 };
 
+export type DurationOption = {
+  label: string;
+  value: number;
+};
+
 export type TeacherSlotData = {
-  teacher: { id: number; name: string; slug: string; subject: string | null; hideFullyBlocked?: boolean; blockFromAppointments?: boolean };
+  teacher: {
+    id: number;
+    name: string;
+    slug: string;
+    subject: string | null;
+    hideFullyBlocked?: boolean;
+    blockFromAppointments?: boolean;
+    durationOptions?: DurationOption[] | null;
+    totalPages?: number | null;
+  };
   slots: ApiSlot[];
   unassignedStudents?: { name: string }[];
   unschedulableStudents?: { name: string }[];

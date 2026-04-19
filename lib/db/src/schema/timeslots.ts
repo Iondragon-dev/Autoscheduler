@@ -11,6 +11,8 @@ export const teachersTable = pgTable("teachers", {
   email: text("email"),
   hideFullyBlocked: boolean("hide_fully_blocked").notNull().default(true),
   blockFromAppointments: boolean("block_from_appointments").notNull().default(true),
+  durationOptions: json("duration_options").$type<Array<{ label: string; value: number }>>(),
+  totalPages: integer("total_pages").notNull().default(10),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

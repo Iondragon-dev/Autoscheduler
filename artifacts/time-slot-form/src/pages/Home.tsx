@@ -6,6 +6,7 @@ import type { Booking } from "@workspace/api-client-react";
 import { Link, useParams } from "wouter";
 import { fmt12, fromMins, toMins, getEffectiveDuration, isFullyBlocked, validateCustomTime, parsePriorityToChoice } from "@/lib/booking-utils";
 import { PRIORITY_LABELS, DURATION_OPTIONS, TOTAL_PAGES, EMPTY_CHOICE, EMPTY_CHOICES } from "@/lib/booking-constants";
+import type { DurationOption } from "@/types/booking";
 import type { TeacherSlotData, Choice } from "@/types/booking";
 
 import { Billboard } from "@/components/booking/Billboard";
@@ -38,6 +39,12 @@ export default function Home() {
   const slots = teacherData?.slots ?? [];
   const unassignedStudents = teacherData?.unassignedStudents ?? [];
   const unschedulableStudents = teacherData?.unschedulableStudents ?? [];
+
+  const effectiveDurationOptions: DurationOption[] =
+    (teacher?.durationOptions && teacher.durationOptions.length > 0)
+      ? teacher.durationOptions
+      : DURATION_OPTIONS;
+  const effectiveTotalPages: number = teacher?.totalPages ?? TOTAL_PAGES;
 
   const [page, setPage] = useState(0);
   const [direction, setDirection] = useState(1);
@@ -93,7 +100,7 @@ export default function Home() {
     .slice()
     .sort((a, b) => slotDayRank(a.label) - slotDayRank(b.label));
 
-  const isDetails = page === 9;
+  const isDetails = page === effectiveTotalPages - 1;
   const choiceIdx = Math.min(Math.floor(page / 3), 2);
   const subPage = isDetails ? -1 : page % 3;
 
@@ -108,7 +115,7 @@ export default function Home() {
     : null;
 
   const canGoNext = (): boolean => {
-    if (page >= TOTAL_PAGES - 1) return false;
+    if (page >= effectiveTotalPages - 1) return false;
     const c = choices[choiceIdx];
     if (subPage === 0) return c.slotId !== null;
     if (subPage === 1) {
@@ -136,9 +143,9 @@ export default function Home() {
     setDirection(1);
     if (editReturnToDetails && page % 3 === 2) {
       setEditReturnToDetails(false);
-      setPage(TOTAL_PAGES - 1);
+      setPage(effectiveTotalPages - 1);
     } else {
-      setPage(p => Math.min(p + 1, TOTAL_PAGES - 1));
+      setPage(p => Math.min(p + 1, effectiveTotalPages - 1));
     }
   };
   const goBack = () => {
@@ -159,7 +166,7 @@ export default function Home() {
     setEditLookupError(null);
     setSubmitError(null);
     setEditReturnToDetails(false);
-    setPage(TOTAL_PAGES - 1);
+    setPage(effectiveTotalPages - 1);
     setDirection(1);
     navLockedRef.current = false;
     return true;
@@ -319,7 +326,7 @@ export default function Home() {
     });
   };
 
-  const progressPct = ((page + 1) / TOTAL_PAGES) * 100;
+  const progressPct = ((page + 1) / effectiveTotalPages) * 100;
   const subPageLabel = isDetails
     ? "Your details"
     : ["Which day?", "How long?", "What time?"][subPage] ?? "";
@@ -392,7 +399,7 @@ export default function Home() {
                 teacher={teacher}
                 isDetails={isDetails}
                 page={page}
-                totalPages={TOTAL_PAGES}
+                totalPages={effectiveTotalPages}
                 choiceIdx={choiceIdx}
                 subPageLabel={subPageLabel}
                 progressPct={progressPct}
@@ -442,7 +449,7 @@ export default function Home() {
                         slotWindowMins={slotWindowMins}
                         currentSlot={currentSlot}
                         teacher={teacher}
-                        durationOptions={DURATION_OPTIONS}
+                        durationOptions={effectiveDurationOptions}
                         priorityLabels={PRIORITY_LABELS}
                         onUpdateChoice={updates => updateChoice(choiceIdx, updates)}
                       />

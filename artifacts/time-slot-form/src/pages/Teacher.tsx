@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
 import { signOutTeacher, getTeacherInfo } from "./TeacherGate";
 import { fmt12, fmtPriority, toMins, fromMins, generateAllStartTimes } from "@/lib/booking-utils";
+import { DURATION_OPTIONS } from "@/lib/booking-constants";
 import JSZip from "jszip";
 
 async function adminFetch(url: string, options?: RequestInit): Promise<Response> {
@@ -294,6 +295,226 @@ function DeleteAccountDialog({ open, onClose }: { open: boolean; onClose: () => 
                 </Button>
               </div>
             </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+type DurationOption = { label: string; value: number };
+
+function DurationOptionsDialog({
+  open,
+  onClose,
+  initial,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  initial: DurationOption[] | null;
+  onSave: (opts: DurationOption[] | null) => Promise<void>;
+}) {
+  const defaultOptions = DURATION_OPTIONS;
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [customOptions, setCustomOptions] = useState<DurationOption[]>([]);
+  const [customInput, setCustomInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    if (!initial || initial.length === 0) {
+      setSelected(new Set(defaultOptions.map(o => o.value)));
+      setCustomOptions([]);
+    } else {
+      const defaultValues = new Set(defaultOptions.map(o => o.value));
+      const sel = new Set<number>();
+      const customs: DurationOption[] = [];
+      for (const opt of initial) {
+        if (defaultValues.has(opt.value)) sel.add(opt.value);
+        else customs.push(opt);
+      }
+      setSelected(sel);
+      setCustomOptions(customs);
+    }
+    setCustomInput("");
+    setError("");
+    setSaving(false);
+  }, [open]);
+
+  const toggleDefault = (value: number) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  };
+
+  const addCustom = () => {
+    const mins = parseInt(customInput.trim(), 10);
+    if (isNaN(mins) || mins < 1 || mins > 480) {
+      setError("Enter a number between 1 and 480.");
+      return;
+    }
+    const allValues = new Set([...Array.from(selected), ...customOptions.map(c => c.value)]);
+    if (allValues.has(mins)) {
+      setError("That duration is already in the list.");
+      return;
+    }
+    const label = mins >= 60 && mins % 60 === 0 ? `${mins / 60} hr` : `${mins} min`;
+    setCustomOptions(prev => [...prev, { label, value: mins }].sort((a, b) => a.value - b.value));
+    setCustomInput("");
+    setError("");
+  };
+
+  const removeCustom = (value: number) => {
+    setCustomOptions(prev => prev.filter(o => o.value !== value));
+  };
+
+  const handleSave = async () => {
+    const combined: DurationOption[] = [
+      ...defaultOptions.filter(o => selected.has(o.value)),
+      ...customOptions,
+    ].sort((a, b) => a.value - b.value);
+    const isAllDefaults =
+      customOptions.length === 0 &&
+      selected.size === defaultOptions.length &&
+      defaultOptions.every(o => selected.has(o.value));
+    setSaving(true);
+    try {
+      await onSave(isAllDefaults ? null : combined);
+      onClose();
+    } catch {
+      setError("Failed to save. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = () => {
+    setSelected(new Set(defaultOptions.map(o => o.value)));
+    setCustomOptions([]);
+    setError("");
+  };
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 16 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-sm p-6"
+          >
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Clock className="w-4 h-4 text-primary" />
+                </div>
+                <h2 className="text-lg font-bold font-display">Duration Options</h2>
+              </div>
+              <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-sm text-muted-foreground mb-4">
+              Choose which session lengths students can select. Changes take effect immediately.
+            </p>
+
+            <div className="space-y-2 mb-4">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Standard options</p>
+              <div className="grid grid-cols-3 gap-2">
+                {defaultOptions.map(opt => {
+                  const on = selected.has(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => toggleDefault(opt.value)}
+                      className={cn(
+                        "py-2 rounded-xl border-2 text-sm font-semibold transition-all",
+                        on
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border bg-background/60 text-muted-foreground hover:border-primary/30"
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {customOptions.length > 0 && (
+              <div className="space-y-2 mb-4">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Custom options</p>
+                <div className="flex flex-wrap gap-2">
+                  {customOptions.map(opt => (
+                    <span
+                      key={opt.value}
+                      className="flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/30 rounded-full px-3 py-1 text-sm font-semibold"
+                    >
+                      {opt.label}
+                      <button
+                        type="button"
+                        onClick={() => removeCustom(opt.value)}
+                        className="text-primary/60 hover:text-primary transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 mb-4">
+              <Input
+                type="number"
+                min={1}
+                max={480}
+                placeholder="Custom minutes…"
+                value={customInput}
+                onChange={e => { setCustomInput(e.target.value); setError(""); }}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } }}
+                className="flex-1 text-sm"
+              />
+              <Button type="button" variant="outline" onClick={addCustom} className="shrink-0">
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <AnimatePresence>
+              {error && (
+                <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                  className="text-sm font-medium text-destructive flex items-center gap-1.5 mb-3">
+                  <AlertCircle className="w-4 h-4 shrink-0" />{error}
+                </motion.p>
+              )}
+            </AnimatePresence>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleReset}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2 mr-auto self-center"
+              >
+                Reset to defaults
+              </button>
+              <Button type="button" variant="outline" onClick={onClose} className="shrink-0">Cancel</Button>
+              <Button type="button" onClick={handleSave} isLoading={saving} className="shrink-0">Save</Button>
+            </div>
           </motion.div>
         </motion.div>
       )}
@@ -2025,6 +2246,8 @@ export default function Teacher() {
   const [tab, setTab] = useState<"slots" | "calendar" | "schedule" | "applied">("slots");
   const [hideFullyBlocked, setHideFullyBlocked] = useState(true);
   const [blockFromAppointments, setBlockFromAppointments] = useState(true);
+  const [durationOptions, setDurationOptions] = useState<DurationOption[] | null>(null);
+  const [showDurationDialog, setShowDurationDialog] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deleteAllConfirm, setDeleteAllConfirm] = useState(false);
@@ -2044,6 +2267,8 @@ export default function Teacher() {
       .then(d => {
         if (typeof d.hideFullyBlocked === "boolean") setHideFullyBlocked(d.hideFullyBlocked);
         if (typeof d.blockFromAppointments === "boolean") setBlockFromAppointments(d.blockFromAppointments);
+        if (Array.isArray(d.durationOptions)) setDurationOptions(d.durationOptions);
+        else setDurationOptions(null);
       })
       .catch(() => {});
   }, []);
@@ -2219,6 +2444,16 @@ export default function Teacher() {
     refetchSlots();
   };
 
+  const handleSaveDurationOptions = async (opts: DurationOption[] | null) => {
+    const res = await adminFetch(`${import.meta.env.BASE_URL}api/teachers/me/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ durationOptions: opts }),
+    });
+    if (!res.ok) throw new Error("Failed to save");
+    setDurationOptions(opts);
+  };
+
   const handleDelete = (id: number) => {
     deleteSlot.mutate({ id }, {
       onSuccess: () => {
@@ -2279,6 +2514,12 @@ export default function Teacher() {
       <div className="relative max-w-3xl mx-auto z-10 pb-24">
         <ChangePasscodeDialog open={showPasscodeDialog} onClose={() => setShowPasscodeDialog(false)} />
         <DeleteAccountDialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)} />
+        <DurationOptionsDialog
+          open={showDurationDialog}
+          onClose={() => setShowDurationDialog(false)}
+          initial={durationOptions}
+          onSave={handleSaveDurationOptions}
+        />
 
         {/* Header */}
         <div className="mb-8">
@@ -2451,6 +2692,14 @@ export default function Teacher() {
                     >
                       {hideFullyBlocked ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       Auto-hide full
+                    </button>
+                    <button
+                      onClick={() => setShowDurationDialog(true)}
+                      title="Edit which session durations students can choose from"
+                      className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border transition-all bg-card text-muted-foreground border-border hover:text-foreground hover:border-primary/40"
+                    >
+                      <Clock className="w-3.5 h-3.5" />
+                      Durations
                     </button>
                     <Button onClick={() => { setShowAddForm((v) => !v); setFormError(null); setDeleteAllConfirm(false); setClearBookingsConfirm(false); }} variant={showAddForm ? "outline" : "default"}>
                       <Plus className="w-4 h-4 mr-1.5" />{showAddForm ? "Cancel" : "Add Slot"}
