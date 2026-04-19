@@ -110,6 +110,17 @@ function isFullyBlocked(startTime: string, endTime: string, blockedTimes: { star
   return false;
 }
 
+// ─── Shared sub-components ───────────────────────────────────────────────────
+
+function ConflictNotice() {
+  return (
+    <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-sm">
+      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-sky-500" />
+      <span>Times shown may already be taken by others — your teacher will confirm your final slot.</span>
+    </div>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -933,12 +944,7 @@ export default function Home() {
                           </div>
                         )}
 
-                        {teacher?.blockFromAppointments === false && (
-                          <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-sm">
-                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-sky-500" />
-                            <span>Times shown may already be taken by others — your teacher will confirm your final slot.</span>
-                          </div>
-                        )}
+                        {teacher?.blockFromAppointments === false && <ConflictNotice />}
 
                         {/* ────── Already submitted? prompt (page 0 only) ────── */}
                         {page === 0 && (
@@ -1014,12 +1020,7 @@ export default function Home() {
                             </p>
                           </div>
 
-                          {teacher?.blockFromAppointments === false && (
-                            <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-sm">
-                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-sky-500" />
-                              <span>Times shown may already be taken by others — your teacher will confirm your final slot.</span>
-                            </div>
-                          )}
+                          {teacher?.blockFromAppointments === false && <ConflictNotice />}
 
                           <div className="grid grid-cols-3 gap-2">
                             {DURATION_OPTIONS.map(opt => {
@@ -1140,12 +1141,7 @@ export default function Home() {
                             </p>
                           </div>
 
-                          {teacher?.blockFromAppointments === false && (
-                            <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-sm">
-                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-sky-500" />
-                              <span>Times shown may already be taken by others — your teacher will confirm your final slot.</span>
-                            </div>
-                          )}
+                          {teacher?.blockFromAppointments === false && <ConflictNotice />}
 
                           {allTimes.length === 0 ? (
                             <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm flex gap-2 items-start">
@@ -1322,12 +1318,7 @@ export default function Home() {
                           })}
                         </div>
 
-                        {teacher?.blockFromAppointments === false && (
-                          <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-sm">
-                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-sky-500" />
-                            <span>Times shown may already be taken by others — your teacher will confirm your final slot.</span>
-                          </div>
-                        )}
+                        {teacher?.blockFromAppointments === false && <ConflictNotice />}
 
                         <div className="space-y-4">
                           <div>
