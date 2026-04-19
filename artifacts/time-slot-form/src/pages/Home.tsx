@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCreateBooking } from "@workspace/api-client-react";
 import type { Booking } from "@workspace/api-client-react";
 import { Link, useParams } from "wouter";
-import { fmt12, fromMins, toMins, getEffectiveDuration, isFullyBlocked } from "@/lib/booking-utils";
+import { fmt12, fromMins, toMins, getEffectiveDuration, isFullyBlocked, validateCustomTime, parsePriorityToChoice } from "@/lib/booking-utils";
 import { PRIORITY_LABELS, DURATION_OPTIONS, TOTAL_PAGES, EMPTY_CHOICE, EMPTY_CHOICES } from "@/lib/booking-constants";
 import type { TeacherSlotData, Choice } from "@/types/booking";
 
@@ -100,25 +100,6 @@ export default function Home() {
   const updateChoice = (idx: number, updates: Partial<Choice>) =>
     setChoices(prev => prev.map((c, i) => i === idx ? { ...c, ...updates } : c));
 
-  const validateCustomTime = (
-    start: string,
-    slotStart: string,
-    slotEnd: string,
-    dur: number,
-    blockedTimes: { start: string; end: string }[],
-  ): string | null => {
-    const startMins = toMins(start);
-    const endMins = startMins + dur;
-    if (startMins < toMins(slotStart))
-      return `Start time must be at or after ${fmt12(slotStart)}.`;
-    if (endMins > toMins(slotEnd))
-      return `Session would end at ${fmt12(fromMins(endMins))}, after the slot closes at ${fmt12(slotEnd)}.`;
-    const isBlocked = blockedTimes.some(bt => startMins < toMins(bt.end) && endMins > toMins(bt.start));
-    if (isBlocked)
-      return "That time overlaps with a blocked period. Please choose a different time.";
-    return null;
-  };
-
   const currentC = choices[choiceIdx];
   const currentSlot = availableSlots.find(s => s.id === currentC?.slotId);
   const currentDur = currentC ? getEffectiveDuration(currentC) : null;
@@ -165,21 +146,6 @@ export default function Home() {
     navLockedRef.current = true;
     setDirection(-1);
     setPage(p => Math.max(p - 1, 0));
-  };
-
-  const parsePriorityToChoice = (priority: string): Choice | null => {
-    const pipeIdx = priority.indexOf("|");
-    if (pipeIdx === -1) return null;
-    const slotId = parseInt(priority.slice(0, pipeIdx));
-    if (isNaN(slotId)) return null;
-    const range = priority.slice(pipeIdx + 1);
-    const dashIdx = range.indexOf("-");
-    if (dashIdx === -1) return null;
-    const start = range.slice(0, dashIdx);
-    const end = range.slice(dashIdx + 1);
-    const duration = toMins(end) - toMins(start);
-    const preset = DURATION_OPTIONS.find(d => d.value === duration);
-    return { slotId, duration: preset ? duration : null, isCustomDuration: !preset, customDurationStr: !preset ? String(duration) : "", start, isCustomTime: false, customTimeStr: "" };
   };
 
   const applyEditMode = (booking: { id: number; priority1: string; priority2: string; priority3: string }) => {

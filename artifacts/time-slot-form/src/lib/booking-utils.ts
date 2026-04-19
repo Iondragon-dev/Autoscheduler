@@ -1,4 +1,6 @@
 import type { TimeSlot } from "@workspace/api-client-react";
+import type { Choice } from "@/types/booking";
+import { DURATION_OPTIONS } from "@/lib/booking-constants";
 
 export function toMins(t: string) {
   const [h, m] = t.split(":").map(Number);
@@ -92,6 +94,40 @@ export function isFullyBlocked(startTime: string, endTime: string, blockedTimes:
     if (covered >= end) return true;
   }
   return false;
+}
+
+export function validateCustomTime(
+  start: string,
+  slotStart: string,
+  slotEnd: string,
+  dur: number,
+  blockedTimes: { start: string; end: string }[],
+): string | null {
+  const startMins = toMins(start);
+  const endMins = startMins + dur;
+  if (startMins < toMins(slotStart))
+    return `Start time must be at or after ${fmt12(slotStart)}.`;
+  if (endMins > toMins(slotEnd))
+    return `Session would end at ${fmt12(fromMins(endMins))}, after the slot closes at ${fmt12(slotEnd)}.`;
+  const isBlocked = blockedTimes.some(bt => startMins < toMins(bt.end) && endMins > toMins(bt.start));
+  if (isBlocked)
+    return "That time overlaps with a blocked period. Please choose a different time.";
+  return null;
+}
+
+export function parsePriorityToChoice(priority: string): Choice | null {
+  const pipeIdx = priority.indexOf("|");
+  if (pipeIdx === -1) return null;
+  const slotId = parseInt(priority.slice(0, pipeIdx));
+  if (isNaN(slotId)) return null;
+  const range = priority.slice(pipeIdx + 1);
+  const dashIdx = range.indexOf("-");
+  if (dashIdx === -1) return null;
+  const start = range.slice(0, dashIdx);
+  const end = range.slice(dashIdx + 1);
+  const duration = toMins(end) - toMins(start);
+  const preset = DURATION_OPTIONS.find(d => d.value === duration);
+  return { slotId, duration: preset ? duration : null, isCustomDuration: !preset, customDurationStr: !preset ? String(duration) : "", start, isCustomTime: false, customTimeStr: "" };
 }
 
 export function getSubBlocks(slot: TimeSlot, stepMins: number) {
