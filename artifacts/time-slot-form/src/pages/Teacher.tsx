@@ -2696,8 +2696,10 @@ export default function Teacher() {
                     <button
                       onClick={() => setShowDurationDialog(true)}
                       title={
-                        durationOptions !== null
+                        durationOptions !== null && durationOptions.length > 0
                           ? `Custom: ${durationOptions.map(o => o.label).join(", ")} — click to edit`
+                          : durationOptions !== null && durationOptions.length === 0
+                          ? "No durations selected — students cannot pick a duration (click to fix)"
                           : "Using default session durations — click to customise"
                       }
                       className={cn(
@@ -2710,7 +2712,12 @@ export default function Teacher() {
                       <Clock className="w-3.5 h-3.5" />
                       Durations
                       {durationOptions !== null && (
-                        <span className="ml-0.5 flex items-center justify-center text-[10px] font-bold bg-violet-200 text-violet-800 rounded-full w-4 h-4 leading-none">
+                        <span className={cn(
+                          "ml-0.5 flex items-center justify-center text-[10px] font-bold rounded-full w-4 h-4 leading-none",
+                          durationOptions.length === 0
+                            ? "bg-destructive/20 text-destructive"
+                            : "bg-violet-200 text-violet-800"
+                        )}>
                           {durationOptions.length}
                         </span>
                       )}
