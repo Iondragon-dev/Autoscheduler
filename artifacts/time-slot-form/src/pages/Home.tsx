@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCreateBooking } from "@workspace/api-client-react";
 import type { Booking } from "@workspace/api-client-react";
 import { Link, useParams } from "wouter";
-import { fmt12, fromMins, toMins, getEffectiveDuration, isFullyBlocked, validateCustomTime, parsePriorityToChoice } from "@/lib/booking-utils";
+import { toMins, getEffectiveDuration, isFullyBlocked, validateCustomTime, parsePriorityToChoice, canAdvancePage, validateBookingDetails, buildPriorityString } from "@/lib/booking-utils";
 import { PRIORITY_LABELS, DURATION_OPTIONS, TOTAL_PAGES, EMPTY_CHOICE, EMPTY_CHOICES } from "@/lib/booking-constants";
 import type { DurationOption } from "@/types/booking";
 import type { TeacherSlotData, Choice } from "@/types/booking";
@@ -114,26 +114,8 @@ export default function Home() {
     ? toMins(currentSlot.endTime) - toMins(currentSlot.startTime)
     : null;
 
-  const canGoNext = (): boolean => {
-    if (page >= effectiveTotalPages - 1) return false;
-    const c = choices[choiceIdx];
-    if (subPage === 0) return c.slotId !== null;
-    if (subPage === 1) {
-      const d = getEffectiveDuration(c);
-      if (d === null || d <= 0 || d > (slotWindowMins ?? 480)) return false;
-      if (slotWindowMins !== null && d > slotWindowMins) return false;
-      return true;
-    }
-    if (subPage === 2) {
-      if (c.start === null) return false;
-      if (c.isCustomTime && currentSlot && currentDur) {
-        const err = validateCustomTime(c.start, currentSlot.startTime, currentSlot.endTime, currentDur, currentSlot.blockedTimes ?? []);
-        if (err) return false;
-      }
-      return true;
-    }
-    return false;
-  };
+  const canGoNext = (): boolean =>
+    canAdvancePage({ page, totalPages: effectiveTotalPages, subPage, choice: currentC, slotWindowMins, currentSlot, currentDur });
 
   useEffect(() => { navLockedRef.current = false; }, [page]);
 
@@ -252,17 +234,10 @@ export default function Home() {
   };
 
   const handleSubmit = async () => {
-    const errs: typeof detailsErrors = {};
-    if (!name.trim()) errs.name = "Name is required";
-    if (!email.trim()) errs.email = "Email is required";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errs.email = "Please enter a valid email";
+    const errs = validateBookingDetails(name, email);
     if (Object.keys(errs).length) { setDetailsErrors(errs); return; }
 
-    const priorities = choices.map(c => {
-      const dur = getEffectiveDuration(c)!;
-      const end = fromMins(toMins(c.start!) + dur);
-      return `${c.slotId}|${c.start}-${end}`;
-    });
+    const priorities = choices.map(buildPriorityString);
 
     setSubmitError(null);
     setShowEditOffer(false);

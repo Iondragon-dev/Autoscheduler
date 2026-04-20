@@ -130,6 +130,54 @@ export function parsePriorityToChoice(priority: string): Choice | null {
   return { slotId, duration: preset ? duration : null, isCustomDuration: !preset, customDurationStr: !preset ? String(duration) : "", start, isCustomTime: false, customTimeStr: "" };
 }
 
+/** Determine whether the student can advance to the next form page.
+ *  Pure function — extracted from the inline canGoNext() in Home.tsx. */
+export function canAdvancePage(params: {
+  page: number;
+  totalPages: number;
+  subPage: number;
+  choice: Choice;
+  slotWindowMins: number | null;
+  currentSlot?: { startTime: string; endTime: string; blockedTimes?: { start: string; end: string }[] } | null;
+  currentDur?: number | null;
+}): boolean {
+  const { page, totalPages, subPage, choice, slotWindowMins, currentSlot, currentDur } = params;
+  if (page >= totalPages - 1) return false;
+  if (subPage === 0) return choice.slotId !== null;
+  if (subPage === 1) {
+    const d = getEffectiveDuration(choice);
+    if (d === null || d <= 0) return false;
+    if (slotWindowMins !== null && d > slotWindowMins) return false;
+    return true;
+  }
+  if (subPage === 2) {
+    if (choice.start === null) return false;
+    if (choice.isCustomTime && currentSlot && currentDur) {
+      const err = validateCustomTime(choice.start, currentSlot.startTime, currentSlot.endTime, currentDur, currentSlot.blockedTimes ?? []);
+      if (err) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+/** Validate name and email on the details page.
+ *  Returns an object with error strings; empty object means valid. */
+export function validateBookingDetails(name: string, email: string): { name?: string; email?: string } {
+  const errs: { name?: string; email?: string } = {};
+  if (!name.trim()) errs.name = "Name is required";
+  if (!email.trim()) errs.email = "Email is required";
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errs.email = "Please enter a valid email";
+  return errs;
+}
+
+/** Build the canonical "slotId|HH:MM-HH:MM" priority string from a completed Choice. */
+export function buildPriorityString(choice: Choice): string {
+  const dur = getEffectiveDuration(choice)!;
+  const end = fromMins(toMins(choice.start!) + dur);
+  return `${choice.slotId}|${choice.start}-${end}`;
+}
+
 export function getSubBlocks(slot: TimeSlot, stepMins: number) {
   const start = toMins(slot.startTime);
   const end = toMins(slot.endTime);
