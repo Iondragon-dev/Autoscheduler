@@ -210,54 +210,22 @@ describe("buildPriorityString", () => {
   });
 });
 
-// ─── Back navigation ──────────────────────────────────────────────────────────
-// Back navigation has no guard logic: page > 0 always allows going back.
-// These tests document that assumption via the data model.
+// ─── canAdvancePage — slotWindowMins null fallback ────────────────────────────
 
-describe("back navigation assumptions", () => {
-  it("page 0 is the only page that has no previous page", () => {
-    expect(0 - 1).toBeLessThan(0);
+describe("canAdvancePage — 480 min fallback when slotWindowMins is null", () => {
+  it("blocks a duration > 480 min when slotWindowMins is null", () => {
+    const choice = { ...EMPTY_CHOICE, slotId: 1, duration: 481 };
+    expect(canAdvancePage({ page: 1, totalPages: 10, subPage: 1, choice, slotWindowMins: null })).toBe(false);
   });
 
-  it("any page > 0 can decrement by 1", () => {
-    for (const p of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
-      expect(Math.max(p - 1, 0)).toBe(p - 1);
-    }
-  });
-});
-
-// ─── Choice isolation ─────────────────────────────────────────────────────────
-
-describe("choice update isolation", () => {
-  const makeChoices = (): Choice[] => [
-    { ...EMPTY_CHOICE, slotId: 1 },
-    { ...EMPTY_CHOICE, slotId: 2 },
-    { ...EMPTY_CHOICE, slotId: 3 },
-  ];
-
-  const updateChoice = (choices: Choice[], idx: number, updates: Partial<Choice>) =>
-    choices.map((c, i) => (i === idx ? { ...c, ...updates } : c));
-
-  it("updating choice at index 0 does not affect index 1 or 2", () => {
-    const choices = makeChoices();
-    const updated = updateChoice(choices, 0, { slotId: 99, duration: 30 });
-    expect(updated[0].slotId).toBe(99);
-    expect(updated[1].slotId).toBe(2);
-    expect(updated[2].slotId).toBe(3);
+  it("allows a duration of exactly 480 min when slotWindowMins is null", () => {
+    const choice = { ...EMPTY_CHOICE, slotId: 1, duration: 480 };
+    expect(canAdvancePage({ page: 1, totalPages: 10, subPage: 1, choice, slotWindowMins: null })).toBe(true);
   });
 
-  it("resetting a choice clears only that index", () => {
-    const choices = makeChoices();
-    const updated = updateChoice(choices, 1, { slotId: null, duration: null, start: null });
-    expect(updated[0].slotId).toBe(1);
-    expect(updated[1].slotId).toBeNull();
-    expect(updated[2].slotId).toBe(3);
-  });
-
-  it("changing slot on a choice resets its duration and start", () => {
-    const choices = makeChoices();
-    const reset = updateChoice(choices, 0, { slotId: 7, duration: null, start: null });
-    expect(reset[0]).toMatchObject({ slotId: 7, duration: null, start: null });
+  it("allows 240 min when slotWindowMins is null", () => {
+    const choice = { ...EMPTY_CHOICE, slotId: 1, duration: 240 };
+    expect(canAdvancePage({ page: 1, totalPages: 10, subPage: 1, choice, slotWindowMins: null })).toBe(true);
   });
 });
 

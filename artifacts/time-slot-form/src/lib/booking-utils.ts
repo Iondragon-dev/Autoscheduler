@@ -147,7 +147,8 @@ export function canAdvancePage(params: {
   if (subPage === 1) {
     const d = getEffectiveDuration(choice);
     if (d === null || d <= 0) return false;
-    if (slotWindowMins !== null && d > slotWindowMins) return false;
+    const effectiveWindow = slotWindowMins ?? 480;
+    if (d > effectiveWindow) return false;
     return true;
   }
   if (subPage === 2) {
