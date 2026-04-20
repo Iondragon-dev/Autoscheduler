@@ -2695,11 +2695,25 @@ export default function Teacher() {
                     </button>
                     <button
                       onClick={() => setShowDurationDialog(true)}
-                      title="Edit which session durations students can choose from"
-                      className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border transition-all bg-card text-muted-foreground border-border hover:text-foreground hover:border-primary/40"
+                      title={
+                        durationOptions !== null
+                          ? `Custom: ${durationOptions.map(o => o.label).join(", ")} — click to edit`
+                          : "Using default session durations — click to customise"
+                      }
+                      className={cn(
+                        "flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border transition-all",
+                        durationOptions !== null
+                          ? "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100"
+                          : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-primary/40"
+                      )}
                     >
                       <Clock className="w-3.5 h-3.5" />
                       Durations
+                      {durationOptions !== null && (
+                        <span className="ml-0.5 flex items-center justify-center text-[10px] font-bold bg-violet-200 text-violet-800 rounded-full w-4 h-4 leading-none">
+                          {durationOptions.length}
+                        </span>
+                      )}
                     </button>
                     <Button onClick={() => { setShowAddForm((v) => !v); setFormError(null); setDeleteAllConfirm(false); setClearBookingsConfirm(false); }} variant={showAddForm ? "outline" : "default"}>
                       <Plus className="w-4 h-4 mr-1.5" />{showAddForm ? "Cancel" : "Add Slot"}
