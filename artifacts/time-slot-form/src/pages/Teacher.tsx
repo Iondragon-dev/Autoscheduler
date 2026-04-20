@@ -2711,16 +2711,21 @@ export default function Teacher() {
                     >
                       <Clock className="w-3.5 h-3.5" />
                       Durations
-                      {durationOptions !== null && (
-                        <span className={cn(
-                          "ml-0.5 flex items-center justify-center text-[10px] font-bold rounded-full w-4 h-4 leading-none",
-                          durationOptions.length === 0
-                            ? "bg-destructive/20 text-destructive"
-                            : "bg-violet-200 text-violet-800"
-                        )}>
-                          {durationOptions.length}
-                        </span>
-                      )}
+                      {(() => {
+                        const count = durationOptions !== null ? durationOptions.length : DURATION_OPTIONS.length;
+                        return (
+                          <span className={cn(
+                            "ml-0.5 flex items-center justify-center text-[10px] font-bold rounded-full w-4 h-4 leading-none",
+                            durationOptions !== null && durationOptions.length === 0
+                              ? "bg-destructive/20 text-destructive"
+                              : durationOptions !== null
+                              ? "bg-violet-200 text-violet-800"
+                              : "bg-muted text-muted-foreground"
+                          )}>
+                            {count}
+                          </span>
+                        );
+                      })()}
                     </button>
                     <Button onClick={() => { setShowAddForm((v) => !v); setFormError(null); setDeleteAllConfirm(false); setClearBookingsConfirm(false); }} variant={showAddForm ? "outline" : "default"}>
                       <Plus className="w-4 h-4 mr-1.5" />{showAddForm ? "Cancel" : "Add Slot"}
