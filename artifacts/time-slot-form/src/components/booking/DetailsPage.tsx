@@ -62,7 +62,7 @@ export function DetailsPage({
 
       <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-2">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-          {editingBookingId !== null ? "Tap a preference to change it" : "Your 3 preferences"}
+          {editingBookingId !== null ? "Tap a preference to change it" : `Your ${choices.length} ${choices.length === 1 ? "preference" : "preferences"}`}
         </p>
         {choices.map((c, i) => {
           const slot = availableSlots.find(s => s.id === c.slotId);

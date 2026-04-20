@@ -41,6 +41,8 @@ async function getTeacherBookings(teacherId: number) {
     priority1: bookingsTable.priority1,
     priority2: bookingsTable.priority2,
     priority3: bookingsTable.priority3,
+    priority4: bookingsTable.priority4,
+    priority5: bookingsTable.priority5,
     createdAt: bookingsTable.createdAt,
     assignedPriority: bookingsTable.assignedPriority,
     assignedTime: bookingsTable.assignedTime,
@@ -240,13 +242,36 @@ router.get("/bookings/lookup", async (req, res) => {
 router.put("/bookings/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ message: "Invalid id" }); return; }
-  const { email, priority1, priority2, priority3 } = req.body ?? {};
+  const { email, priority1, priority2, priority3, priority4, priority5 } = req.body ?? {};
   if (!email) { res.status(400).json({ message: "email is required" }); return; }
   const [existing] = await db.select().from(bookingsTable).where(eq(bookingsTable.id, id)).limit(1);
   if (!existing) { res.status(404).json({ message: "Booking not found" }); return; }
   if (existing.email !== email.toLowerCase().trim()) { res.status(403).json({ message: "Email does not match this booking" }); return; }
+
+  // Enforce teacher-configured minimum number of choices
+  const slotForTeacher = await db.select({ teacherId: timeSlotsTable.teacherId }).from(timeSlotsTable).where(eq(timeSlotsTable.id, existing.timeSlotId)).limit(1);
+  const editTeacherId = slotForTeacher[0]?.teacherId;
+  if (editTeacherId != null) {
+    const teacherRow = await db.select({ totalPages: teachersTable.totalPages }).from(teachersTable).where(eq(teachersTable.id, editTeacherId)).limit(1);
+    if (teacherRow.length > 0) {
+      const requiredChoices = Math.round((teacherRow[0].totalPages - 1) / 3);
+      const filled = [priority1, priority2, priority3, priority4, priority5].filter((p): p is string => !!p && p.includes("|"));
+      if (filled.length < requiredChoices) {
+        res.status(400).json({ message: `Please submit ${requiredChoices} ${requiredChoices === 1 ? "preference" : "preferences"} as required by your teacher.` });
+        return;
+      }
+    }
+  }
+
   const [updated] = await db.update(bookingsTable)
-    .set({ priority1, priority2, priority3, assignedPriority: null, assignedTime: null, wasScheduled: false })
+    .set({
+      priority1,
+      priority2: priority2 ?? "",
+      priority3: priority3 ?? "",
+      priority4: priority4 ?? null,
+      priority5: priority5 ?? null,
+      assignedPriority: null, assignedTime: null, wasScheduled: false,
+    })
     .where(eq(bookingsTable.id, id))
     .returning();
   // Re-run scheduler for all unassigned bookings, with this student processed last
@@ -267,7 +292,7 @@ router.post("/bookings", async (req, res) => {
     return;
   }
 
-  const { timeSlotId, name, email, priority1, priority2, priority3 } = parsed.data;
+  const { timeSlotId, name, email, priority1, priority2, priority3, priority4, priority5 } = parsed.data;
 
   const slot = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.id, timeSlotId)).limit(1);
   if (!slot.length) {
@@ -294,8 +319,8 @@ router.post("/bookings", async (req, res) => {
   // Parse and validate all priority strings
   const toMins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 
-  const parsePrio = (p: string): { slotId: number; start: string; end: string } | null => {
-    if (!p.includes("|")) return null;
+  const parsePrio = (p: string | undefined): { slotId: number; start: string; end: string } | null => {
+    if (!p || !p.includes("|")) return null;
     const [idStr, range] = p.split("|");
     const dashIdx = range.indexOf("-");
     if (dashIdx === -1) return null;
@@ -306,11 +331,25 @@ router.post("/bookings", async (req, res) => {
     return { slotId, start, end };
   };
 
-  const priorities = [priority1, priority2, priority3];
-  const parsedPrios = priorities.map(parsePrio);
+  // Collect only the non-empty priorities (priority1 is always required)
+  const allPriorityStrs = [priority1, priority2, priority3, priority4, priority5];
+  const filledPriorityStrs = allPriorityStrs.filter((p): p is string => !!p && p.includes("|"));
+  const parsedPrios = filledPriorityStrs.map(parsePrio);
   if (parsedPrios.some(p => p === null)) {
     res.status(400).json({ message: "Invalid preference format. Please go back and resubmit." });
     return;
+  }
+
+  // Enforce teacher-configured minimum number of choices
+  if (teacherId != null) {
+    const teacherRow = await db.select({ totalPages: teachersTable.totalPages }).from(teachersTable).where(eq(teachersTable.id, teacherId)).limit(1);
+    if (teacherRow.length > 0) {
+      const requiredChoices = Math.round((teacherRow[0].totalPages - 1) / 3);
+      if (filledPriorityStrs.length < requiredChoices) {
+        res.status(400).json({ message: `Please submit ${requiredChoices} ${requiredChoices === 1 ? "preference" : "preferences"} as required by your teacher.` });
+        return;
+      }
+    }
   }
 
   const referencedSlotIds = [...new Set(parsedPrios.map(p => p!.slotId))];
@@ -346,11 +385,18 @@ router.post("/bookings", async (req, res) => {
   const slotStartKeys = parsedPrios.map(p => `${p!.slotId}|${p!.start}`);
   const uniqueKeys = new Set(slotStartKeys);
   if (uniqueKeys.size < slotStartKeys.length) {
-    res.status(400).json({ message: "Your 3 preferences must each be a different time. Please go back and choose distinct times." });
+    res.status(400).json({ message: "Your preferences must each be a different time. Please go back and choose distinct times." });
     return;
   }
 
-  const [booking] = await db.insert(bookingsTable).values({ timeSlotId, name, email: email.toLowerCase().trim(), priority1, priority2, priority3 }).returning();
+  const [booking] = await db.insert(bookingsTable).values({
+    timeSlotId, name, email: email.toLowerCase().trim(),
+    priority1,
+    priority2: priority2 ?? "",
+    priority3: priority3 ?? "",
+    priority4: priority4 ?? null,
+    priority5: priority5 ?? null,
+  }).returning();
 
   res.status(201).json({
     id: booking.id,
@@ -361,6 +407,8 @@ router.post("/bookings", async (req, res) => {
     priority1: booking.priority1,
     priority2: booking.priority2,
     priority3: booking.priority3,
+    priority4: booking.priority4,
+    priority5: booking.priority5,
     createdAt: booking.createdAt.toISOString(),
   });
 });
@@ -401,10 +449,10 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
     assignedBySlot.get(slotId)!.push({ start, end });
   };
 
-  // Parse all three priorities for each booking up front
+  // Parse all priorities for each booking up front (up to 5)
   const bookingParsed = allBookings.map(b => ({
     bookingId: b.id,
-    priorities: [b.priority1, b.priority2, b.priority3].map(parsePriority),
+    priorities: [b.priority1, b.priority2, b.priority3, b.priority4, b.priority5].map(parsePriority),
   }));
 
   const assignments = new Map<number, { priority: number; time: string }>();
@@ -581,7 +629,7 @@ async function scheduleUnassigned(teacherId: number, lastBookingId: number) {
     .map(b => ({
       bookingId: b.id,
       timeSlotId: b.timeSlotId,
-      priorities: [b.priority1, b.priority2, b.priority3].map(parsePri),
+      priorities: [b.priority1, b.priority2, b.priority3, b.priority4, b.priority5].map(parsePri),
     }));
 
   const assignments = new Map<number, { priority: number; time: string }>();

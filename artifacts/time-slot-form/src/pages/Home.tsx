@@ -5,7 +5,7 @@ import { useCreateBooking } from "@workspace/api-client-react";
 import type { Booking } from "@workspace/api-client-react";
 import { Link, useParams } from "wouter";
 import { toMins, getEffectiveDuration, isFullyBlocked, validateCustomTime, parsePriorityToChoice, canAdvancePage, validateBookingDetails, buildPriorityString } from "@/lib/booking-utils";
-import { PRIORITY_LABELS, DURATION_OPTIONS, TOTAL_PAGES, EMPTY_CHOICE, EMPTY_CHOICES } from "@/lib/booking-constants";
+import { PRIORITY_LABELS, DURATION_OPTIONS, TOTAL_PAGES, EMPTY_CHOICE, EMPTY_CHOICES, makeEmptyChoices } from "@/lib/booking-constants";
 import type { DurationOption } from "@/types/booking";
 import type { TeacherSlotData, Choice } from "@/types/booking";
 
@@ -45,6 +45,8 @@ export default function Home() {
       ? teacher.durationOptions
       : DURATION_OPTIONS;
   const effectiveTotalPages: number = teacher?.totalPages ?? TOTAL_PAGES;
+  const numChoices: number = Math.max(1, Math.min(5, Math.round((effectiveTotalPages - 1) / 3)));
+  const activePriorityLabels = PRIORITY_LABELS.slice(0, numChoices);
 
   const [page, setPage] = useState(0);
   const [direction, setDirection] = useState(1);
@@ -66,6 +68,19 @@ export default function Home() {
   const [editSaved, setEditSaved] = useState(false);
 
   const [choices, setChoices] = useState<Choice[]>(EMPTY_CHOICES.map(c => ({ ...c })));
+  const prevNumChoicesRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevNumChoicesRef.current === null) {
+      prevNumChoicesRef.current = numChoices;
+      setChoices(makeEmptyChoices(numChoices));
+      return;
+    }
+    if (prevNumChoicesRef.current !== numChoices && page === 0 && !confirmedBooking) {
+      prevNumChoicesRef.current = numChoices;
+      setChoices(makeEmptyChoices(numChoices));
+    }
+  }, [numChoices]);
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [detailsErrors, setDetailsErrors] = useState<{ name?: string; email?: string }>({});
@@ -101,7 +116,7 @@ export default function Home() {
     .sort((a, b) => slotDayRank(a.label) - slotDayRank(b.label));
 
   const isDetails = page === effectiveTotalPages - 1;
-  const choiceIdx = Math.min(Math.floor(page / 3), 2);
+  const choiceIdx = Math.min(Math.floor(page / 3), numChoices - 1);
   const subPage = isDetails ? -1 : page % 3;
 
   const updateChoice = (idx: number, updates: Partial<Choice>) =>
@@ -137,10 +152,17 @@ export default function Home() {
     setPage(p => Math.max(p - 1, 0));
   };
 
-  const applyEditMode = (booking: { id: number; priority1: string; priority2: string; priority3: string }) => {
-    const parsed = [booking.priority1, booking.priority2, booking.priority3].map(p => parsePriorityToChoice(p));
+  const applyEditMode = (booking: { id: number; priority1: string; priority2?: string; priority3?: string; priority4?: string; priority5?: string }) => {
+    const allPrios = [booking.priority1, booking.priority2, booking.priority3, booking.priority4, booking.priority5];
+    const filledPrios = allPrios.filter((p): p is string => !!p && p.includes("|"));
+    const parsed = filledPrios.map(p => parsePriorityToChoice(p));
     if (parsed.some(c => c === null)) return false;
-    setChoices(parsed as Choice[]);
+    // Pad up to current numChoices so the choice array always matches the required length
+    const filledChoices = parsed as Choice[];
+    const paddedChoices = filledChoices.length >= numChoices
+      ? filledChoices.slice(0, numChoices)
+      : [...filledChoices, ...makeEmptyChoices(numChoices - filledChoices.length)];
+    setChoices(paddedChoices);
     setEditingBookingId(booking.id);
     setShowEditOffer(false);
     setShowEditEmailPrompt(false);
@@ -159,7 +181,8 @@ export default function Home() {
     try {
       const res = await fetch(`/api/bookings/lookup?email=${encodeURIComponent(email.trim().toLowerCase())}&slug=${encodeURIComponent(slug ?? "")}`);
       if (!res.ok) { setSubmitError("Couldn't find your submission. Please try again."); return; }
-      const booking = await res.json() as { id: number; priority1: string; priority2: string; priority3: string };
+      type BookingLookup = { id: number; priority1: string; priority2?: string; priority3?: string; priority4?: string; priority5?: string; name?: string; email?: string };
+      const booking = await res.json() as BookingLookup;
       if (!applyEditMode(booking)) { setSubmitError("Couldn't load your previous choices. Please try again."); }
     } catch {
       setSubmitError("Network error. Please try again.");
@@ -180,7 +203,8 @@ export default function Home() {
       const res = await fetch(`/api/bookings/lookup?email=${encodeURIComponent(emailStr)}&slug=${encodeURIComponent(slug ?? "")}`);
       if (res.status === 404) { setEditLookupError("No submission found for that email."); return; }
       if (!res.ok) { setEditLookupError("Something went wrong. Please try again."); return; }
-      const booking = await res.json() as { id: number; priority1: string; priority2: string; priority3: string; name?: string; email?: string };
+      type BookingLookup = { id: number; priority1: string; priority2?: string; priority3?: string; priority4?: string; priority5?: string; name?: string; email?: string };
+      const booking = await res.json() as BookingLookup;
       if (!applyEditMode(booking)) { setEditLookupError("Couldn't load your previous choices. Please try again."); return; }
       if (booking.name) setName(booking.name);
       if (booking.email) setEmail(booking.email);
@@ -203,7 +227,8 @@ export default function Home() {
       const res = await fetch(`/api/bookings/lookup?email=${encodeURIComponent(emailStr)}&slug=${encodeURIComponent(slug ?? "")}`);
       if (res.status === 404) { setEditLookupError("No submission found for that email."); return; }
       if (!res.ok) { setEditLookupError("Something went wrong. Please try again."); return; }
-      const booking = await res.json() as { id: number; priority1: string; priority2: string; priority3: string; name?: string; email?: string };
+      type BookingLookup = { id: number; priority1: string; priority2?: string; priority3?: string; priority4?: string; priority5?: string; name?: string; email?: string };
+      const booking = await res.json() as BookingLookup;
       if (!applyEditMode(booking)) { setEditLookupError("Couldn't load your previous choices. Please try again."); return; }
       if (booking.name) setName(booking.name);
       if (booking.email) setEmail(booking.email);
@@ -219,7 +244,7 @@ export default function Home() {
     setConfirmedBooking(null);
     setPage(0);
     setDirection(1);
-    setChoices(EMPTY_CHOICES.map(c => ({ ...c })));
+    setChoices(makeEmptyChoices(numChoices));
     setName("");
     setEmail("");
     setDetailsErrors({});
@@ -248,7 +273,14 @@ export default function Home() {
         const res = await fetch(`/api/bookings/${editingBookingId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email.trim(), priority1: priorities[0], priority2: priorities[1], priority3: priorities[2] }),
+          body: JSON.stringify({
+            email: email.trim(),
+            priority1: priorities[0],
+            priority2: priorities[1] ?? "",
+            priority3: priorities[2] ?? "",
+            priority4: priorities[3] ?? undefined,
+            priority5: priorities[4] ?? undefined,
+          }),
         });
         const data = await res.json();
         if (!res.ok) { setSubmitError(data.message ?? "Failed to update. Please try again."); return; }
@@ -256,7 +288,7 @@ export default function Home() {
         setEditingBookingId(null);
         setPage(0);
         setDirection(1);
-        setChoices(EMPTY_CHOICES.map(c => ({ ...c })));
+        setChoices(makeEmptyChoices(numChoices));
         setShowBillboardEditPrompt(false);
         setShowBillboard(true);
         setEditSaved(true);
@@ -276,8 +308,10 @@ export default function Home() {
         name: name.trim(),
         email: email.trim(),
         priority1: priorities[0],
-        priority2: priorities[1],
-        priority3: priorities[2],
+        priority2: priorities[1] ?? "",
+        priority3: priorities[2] ?? "",
+        priority4: priorities[3],
+        priority5: priorities[4],
       },
     }, {
       onSuccess: d => {
@@ -379,7 +413,7 @@ export default function Home() {
                 subPageLabel={subPageLabel}
                 progressPct={progressPct}
                 editingBookingId={editingBookingId}
-                priorityLabels={PRIORITY_LABELS}
+                priorityLabels={activePriorityLabels}
               />
 
               <div className="min-h-[320px]">
@@ -407,7 +441,7 @@ export default function Home() {
                         editEmailInput={editEmailInput}
                         editLookupError={editLookupError}
                         isEditLoading={isEditLoading}
-                        priorityLabels={PRIORITY_LABELS}
+                        priorityLabels={activePriorityLabels}
                         onSelectSlot={slotId => updateChoice(choiceIdx, { slotId, duration: null, start: null })}
                         onSetShowEditEmailPrompt={setShowEditEmailPrompt}
                         onEditEmailChange={setEditEmailInput}
@@ -425,7 +459,7 @@ export default function Home() {
                         currentSlot={currentSlot}
                         teacher={teacher}
                         durationOptions={effectiveDurationOptions}
-                        priorityLabels={PRIORITY_LABELS}
+                        priorityLabels={activePriorityLabels}
                         onUpdateChoice={updates => updateChoice(choiceIdx, updates)}
                       />
                     )}

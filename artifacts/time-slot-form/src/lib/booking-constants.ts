@@ -1,11 +1,13 @@
 import type { Choice } from "@/types/booking";
 
-export const PRIORITY_LABELS = ["1st", "2nd", "3rd"] as const;
+export const PRIORITY_LABELS = ["1st", "2nd", "3rd", "4th", "5th"] as const;
 
 export const PRIORITY_COLORS = [
   "bg-amber-500/15 text-amber-700 border-amber-400/40",
   "bg-blue-500/15 text-blue-700 border-blue-400/40",
   "bg-slate-500/15 text-slate-700 border-slate-400/40",
+  "bg-purple-500/15 text-purple-700 border-purple-400/40",
+  "bg-green-500/15 text-green-700 border-green-400/40",
 ] as const;
 
 export const DURATION_OPTIONS = [
@@ -17,11 +19,16 @@ export const DURATION_OPTIONS = [
   { label: "1 hour", value: 60 },
 ];
 
-export const TOTAL_PAGES = 10;
+export const DEFAULT_NUM_CHOICES = 3;
+export const TOTAL_PAGES = DEFAULT_NUM_CHOICES * 3 + 1;
 
 export const EMPTY_CHOICE: Choice = {
   slotId: null, duration: null, isCustomDuration: false,
   customDurationStr: "", start: null, isCustomTime: false, customTimeStr: "",
 };
 
-export const EMPTY_CHOICES: Choice[] = [{ ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }];
+export function makeEmptyChoices(n: number): Choice[] {
+  return Array.from({ length: Math.max(1, Math.min(5, n)) }, () => ({ ...EMPTY_CHOICE }));
+}
+
+export const EMPTY_CHOICES: Choice[] = makeEmptyChoices(DEFAULT_NUM_CHOICES);

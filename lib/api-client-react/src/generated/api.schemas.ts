@@ -9,10 +9,10 @@ export interface HealthStatus {
   status: string;
 }
 
-export interface BlockedTimeRange {
+export type TimeSlotBlockedTimesItem = {
   start: string;
   end: string;
-}
+};
 
 export interface TimeSlot {
   id: number;
@@ -20,8 +20,8 @@ export interface TimeSlot {
   startTime: string;
   endTime: string;
   available: boolean;
-  hideWhenFull: boolean;
-  blockedTimes: BlockedTimeRange[];
+  hideWhenFull?: boolean;
+  blockedTimes?: TimeSlotBlockedTimesItem[];
 }
 
 export interface CreateTimeSlotRequest {
@@ -32,10 +32,10 @@ export interface CreateTimeSlotRequest {
 
 export interface UpdateTimeSlotRequest {
   available?: boolean;
-  hideWhenFull?: boolean;
   label?: string;
   startTime?: string;
   endTime?: string;
+  hideWhenFull?: boolean;
 }
 
 export interface Booking {
@@ -45,8 +45,10 @@ export interface Booking {
   name: string;
   email: string;
   priority1: string;
-  priority2: string;
-  priority3: string;
+  priority2?: string;
+  priority3?: string;
+  priority4?: string;
+  priority5?: string;
   createdAt: string;
 }
 
@@ -55,8 +57,10 @@ export interface CreateBookingRequest {
   name: string;
   email: string;
   priority1: string;
-  priority2: string;
-  priority3: string;
+  priority2?: string;
+  priority3?: string;
+  priority4?: string;
+  priority5?: string;
 }
 
 export interface ErrorResponse {

@@ -2247,6 +2247,7 @@ export default function Teacher() {
   const [hideFullyBlocked, setHideFullyBlocked] = useState(true);
   const [blockFromAppointments, setBlockFromAppointments] = useState(true);
   const [durationOptions, setDurationOptions] = useState<DurationOption[] | null>(null);
+  const [numChoices, setNumChoices] = useState(3);
   const [showDurationDialog, setShowDurationDialog] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
@@ -2269,6 +2270,7 @@ export default function Teacher() {
         if (typeof d.blockFromAppointments === "boolean") setBlockFromAppointments(d.blockFromAppointments);
         if (Array.isArray(d.durationOptions)) setDurationOptions(d.durationOptions);
         else setDurationOptions(null);
+        if (typeof d.numChoices === "number" && d.numChoices >= 1 && d.numChoices <= 5) setNumChoices(d.numChoices);
       })
       .catch(() => {});
   }, []);
@@ -2452,6 +2454,16 @@ export default function Teacher() {
     });
     if (!res.ok) throw new Error("Failed to save");
     setDurationOptions(opts);
+  };
+
+  const handleSetNumChoices = async (n: number) => {
+    const next = Math.max(1, Math.min(5, n));
+    setNumChoices(next);
+    await adminFetch(`${import.meta.env.BASE_URL}api/teachers/me/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ numChoices: next }),
+    });
   };
 
   const handleDelete = (id: number) => {
@@ -2727,6 +2739,30 @@ export default function Teacher() {
                         );
                       })()}
                     </button>
+                    <div
+                      title="Number of priority choices students must submit (1–5)"
+                      className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg border bg-card text-muted-foreground border-border"
+                    >
+                      <button
+                        onClick={() => handleSetNumChoices(numChoices - 1)}
+                        disabled={numChoices <= 1}
+                        className="w-5 h-5 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors"
+                        aria-label="Decrease priority choices"
+                      >
+                        −
+                      </button>
+                      <span className="min-w-[52px] text-center text-foreground">
+                        {numChoices} {numChoices === 1 ? "choice" : "choices"}
+                      </span>
+                      <button
+                        onClick={() => handleSetNumChoices(numChoices + 1)}
+                        disabled={numChoices >= 5}
+                        className="w-5 h-5 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors"
+                        aria-label="Increase priority choices"
+                      >
+                        +
+                      </button>
+                    </div>
                     <Button onClick={() => { setShowAddForm((v) => !v); setFormError(null); setDeleteAllConfirm(false); setClearBookingsConfirm(false); }} variant={showAddForm ? "outline" : "default"}>
                       <Plus className="w-4 h-4 mr-1.5" />{showAddForm ? "Cancel" : "Add Slot"}
                     </Button>

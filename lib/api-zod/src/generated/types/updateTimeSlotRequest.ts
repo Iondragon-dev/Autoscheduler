@@ -11,4 +11,5 @@ export interface UpdateTimeSlotRequest {
   label?: string;
   startTime?: string;
   endTime?: string;
+  hideWhenFull?: boolean;
 }

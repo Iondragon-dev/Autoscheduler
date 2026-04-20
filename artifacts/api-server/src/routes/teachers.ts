@@ -117,11 +117,14 @@ router.get("/teachers/me/settings", requireTeacherSession, async (req, res) => {
     .from(teachersTable)
     .where(eq(teachersTable.id, res.locals.teacherId))
     .limit(1);
+  const totalPages = teacher?.totalPages ?? 10;
+  const numChoices = Math.round((totalPages - 1) / 3);
   res.json({
     hideFullyBlocked: teacher?.hideFullyBlocked ?? true,
     blockFromAppointments: teacher?.blockFromAppointments ?? true,
     durationOptions: teacher?.durationOptions ?? null,
-    totalPages: teacher?.totalPages ?? 10,
+    totalPages,
+    numChoices,
   });
 });
 
@@ -135,7 +138,7 @@ function isValidDurationOption(item: unknown): item is { label: string; value: n
 }
 
 router.patch("/teachers/me/settings", requireTeacherSession, async (req, res) => {
-  const { hideFullyBlocked, blockFromAppointments, durationOptions } = req.body ?? {};
+  const { hideFullyBlocked, blockFromAppointments, durationOptions, numChoices } = req.body ?? {};
   const updates: Record<string, unknown> = {};
   if (typeof hideFullyBlocked === "boolean") updates.hideFullyBlocked = hideFullyBlocked;
   if (typeof blockFromAppointments === "boolean") updates.blockFromAppointments = blockFromAppointments;
@@ -147,6 +150,9 @@ router.patch("/teachers/me/settings", requireTeacherSession, async (req, res) =>
       return;
     }
     updates.durationOptions = durationOptions;
+  }
+  if (typeof numChoices === "number" && Number.isInteger(numChoices) && numChoices >= 1 && numChoices <= 5) {
+    updates.totalPages = numChoices * 3 + 1;
   }
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ message: "No valid settings provided" });

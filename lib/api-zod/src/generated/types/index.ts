@@ -13,4 +13,5 @@ export * from "./errorResponse";
 export * from "./healthStatus";
 export * from "./successResponse";
 export * from "./timeSlot";
+export * from "./timeSlotBlockedTimesItem";
 export * from "./updateTimeSlotRequest";

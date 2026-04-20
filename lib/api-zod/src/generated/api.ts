@@ -24,6 +24,15 @@ export const GetTimeSlotsResponseItem = zod.object({
   startTime: zod.string(),
   endTime: zod.string(),
   available: zod.boolean(),
+  hideWhenFull: zod.boolean().optional(),
+  blockedTimes: zod
+    .array(
+      zod.object({
+        start: zod.string(),
+        end: zod.string(),
+      }),
+    )
+    .optional(),
 });
 export const GetTimeSlotsResponse = zod.array(GetTimeSlotsResponseItem);
 
@@ -45,10 +54,10 @@ export const UpdateTimeSlotParams = zod.object({
 
 export const UpdateTimeSlotBody = zod.object({
   available: zod.boolean().optional(),
-  hideWhenFull: zod.boolean().optional(),
   label: zod.string().optional(),
   startTime: zod.string().optional(),
   endTime: zod.string().optional(),
+  hideWhenFull: zod.boolean().optional(),
 });
 
 export const UpdateTimeSlotResponse = zod.object({
@@ -57,7 +66,15 @@ export const UpdateTimeSlotResponse = zod.object({
   startTime: zod.string(),
   endTime: zod.string(),
   available: zod.boolean(),
-  hideWhenFull: zod.boolean(),
+  hideWhenFull: zod.boolean().optional(),
+  blockedTimes: zod
+    .array(
+      zod.object({
+        start: zod.string(),
+        end: zod.string(),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -81,8 +98,10 @@ export const GetBookingsResponseItem = zod.object({
   name: zod.string(),
   email: zod.string(),
   priority1: zod.string(),
-  priority2: zod.string(),
-  priority3: zod.string(),
+  priority2: zod.string().optional(),
+  priority3: zod.string().optional(),
+  priority4: zod.string().optional(),
+  priority5: zod.string().optional(),
   createdAt: zod.string(),
 });
 export const GetBookingsResponse = zod.array(GetBookingsResponseItem);
@@ -95,6 +114,8 @@ export const CreateBookingBody = zod.object({
   name: zod.string(),
   email: zod.string(),
   priority1: zod.string(),
-  priority2: zod.string(),
-  priority3: zod.string(),
+  priority2: zod.string().optional(),
+  priority3: zod.string().optional(),
+  priority4: zod.string().optional(),
+  priority5: zod.string().optional(),
 });

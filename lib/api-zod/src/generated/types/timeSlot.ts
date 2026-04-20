@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { TimeSlotBlockedTimesItem } from "./timeSlotBlockedTimesItem";
 
 export interface TimeSlot {
   id: number;
@@ -12,4 +13,6 @@ export interface TimeSlot {
   startTime: string;
   endTime: string;
   available: boolean;
+  hideWhenFull?: boolean;
+  blockedTimes?: TimeSlotBlockedTimesItem[];
 }

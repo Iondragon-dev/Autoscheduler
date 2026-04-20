@@ -11,6 +11,8 @@ export interface CreateBookingRequest {
   name: string;
   email: string;
   priority1: string;
-  priority2: string;
-  priority3: string;
+  priority2?: string;
+  priority3?: string;
+  priority4?: string;
+  priority5?: string;
 }
