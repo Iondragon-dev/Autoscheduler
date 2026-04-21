@@ -2248,6 +2248,7 @@ export default function Teacher() {
   const [blockFromAppointments, setBlockFromAppointments] = useState(true);
   const [durationOptions, setDurationOptions] = useState<DurationOption[] | null>(null);
   const [numChoices, setNumChoices] = useState(3);
+  const [minStudentsPerSlot, setMinStudentsPerSlot] = useState(1);
   const [maxStudentsPerSlot, setMaxStudentsPerSlot] = useState(1);
   const [showDurationDialog, setShowDurationDialog] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -2272,6 +2273,7 @@ export default function Teacher() {
         if (Array.isArray(d.durationOptions)) setDurationOptions(d.durationOptions);
         else setDurationOptions(null);
         if (typeof d.numChoices === "number" && d.numChoices >= 1 && d.numChoices <= 5) setNumChoices(d.numChoices);
+        if (typeof d.minStudentsPerSlot === "number" && d.minStudentsPerSlot >= 1) setMinStudentsPerSlot(d.minStudentsPerSlot);
         if (typeof d.maxStudentsPerSlot === "number" && d.maxStudentsPerSlot >= 1) setMaxStudentsPerSlot(d.maxStudentsPerSlot);
       })
       .catch(() => {});
@@ -2468,13 +2470,27 @@ export default function Teacher() {
     });
   };
 
-  const handleSetMaxStudentsPerSlot = async (n: number) => {
+  const handleSetMinStudentsPerSlot = async (n: number) => {
     const next = Math.max(1, n);
-    setMaxStudentsPerSlot(next);
+    const clampedMax = Math.max(next, maxStudentsPerSlot);
+    setMinStudentsPerSlot(next);
+    setMaxStudentsPerSlot(clampedMax);
     await adminFetch(`${import.meta.env.BASE_URL}api/teachers/me/settings`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ maxStudentsPerSlot: next }),
+      body: JSON.stringify({ minStudentsPerSlot: next, maxStudentsPerSlot: clampedMax }),
+    });
+  };
+
+  const handleSetMaxStudentsPerSlot = async (n: number) => {
+    const next = Math.max(1, n);
+    const clampedMin = Math.min(next, minStudentsPerSlot);
+    setMaxStudentsPerSlot(next);
+    setMinStudentsPerSlot(clampedMin);
+    await adminFetch(`${import.meta.env.BASE_URL}api/teachers/me/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minStudentsPerSlot: clampedMin, maxStudentsPerSlot: next }),
     });
   };
 
@@ -3299,28 +3315,55 @@ export default function Teacher() {
 
                 {/* Slot Capacities Panel */}
                 <div className="rounded-xl border border-border bg-muted/20 p-4">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Users className="w-4 h-4 text-muted-foreground shrink-0" />
                     <span className="text-sm font-semibold text-foreground">Students per Slot</span>
-                    <div className="ml-auto flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={maxStudentsPerSlot <= 1}
-                        onClick={() => handleSetMaxStudentsPerSlot(maxStudentsPerSlot - 1)}
-                        className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-base font-medium"
-                      >
-                        −
-                      </button>
-                      <span className="w-10 text-center text-sm font-semibold tabular-nums text-foreground">
-                        {maxStudentsPerSlot}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleSetMaxStudentsPerSlot(maxStudentsPerSlot + 1)}
-                        className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-base font-medium"
-                      >
-                        +
-                      </button>
+                    <div className="ml-auto flex items-center gap-2">
+                      {/* Min stepper */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">min</span>
+                        <button
+                          type="button"
+                          disabled={minStudentsPerSlot <= 1}
+                          onClick={() => handleSetMinStudentsPerSlot(minStudentsPerSlot - 1)}
+                          className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-base font-medium"
+                        >
+                          −
+                        </button>
+                        <span className="w-8 text-center text-sm font-semibold tabular-nums text-foreground">
+                          {minStudentsPerSlot}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleSetMinStudentsPerSlot(minStudentsPerSlot + 1)}
+                          className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-base font-medium"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <span className="text-muted-foreground text-sm font-medium">–</span>
+                      {/* Max stepper */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">max</span>
+                        <button
+                          type="button"
+                          disabled={maxStudentsPerSlot <= 1}
+                          onClick={() => handleSetMaxStudentsPerSlot(maxStudentsPerSlot - 1)}
+                          className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-base font-medium"
+                        >
+                          −
+                        </button>
+                        <span className="w-8 text-center text-sm font-semibold tabular-nums text-foreground">
+                          {maxStudentsPerSlot}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleSetMaxStudentsPerSlot(maxStudentsPerSlot + 1)}
+                          className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-base font-medium"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

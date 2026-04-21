@@ -113,6 +113,7 @@ router.get("/teachers/me/settings", requireTeacherSession, async (req, res) => {
       blockFromAppointments: teachersTable.blockFromAppointments,
       durationOptions: teachersTable.durationOptions,
       totalPages: teachersTable.totalPages,
+      minStudentsPerSlot: teachersTable.minStudentsPerSlot,
       maxStudentsPerSlot: teachersTable.maxStudentsPerSlot,
     })
     .from(teachersTable)
@@ -126,6 +127,7 @@ router.get("/teachers/me/settings", requireTeacherSession, async (req, res) => {
     durationOptions: teacher?.durationOptions ?? null,
     totalPages,
     numChoices,
+    minStudentsPerSlot: teacher?.minStudentsPerSlot ?? 1,
     maxStudentsPerSlot: teacher?.maxStudentsPerSlot ?? 1,
   });
 });
@@ -140,7 +142,7 @@ function isValidDurationOption(item: unknown): item is { label: string; value: n
 }
 
 router.patch("/teachers/me/settings", requireTeacherSession, async (req, res) => {
-  const { hideFullyBlocked, blockFromAppointments, durationOptions, numChoices, maxStudentsPerSlot } = req.body ?? {};
+  const { hideFullyBlocked, blockFromAppointments, durationOptions, numChoices, minStudentsPerSlot, maxStudentsPerSlot } = req.body ?? {};
   const updates: Record<string, unknown> = {};
   if (typeof hideFullyBlocked === "boolean") updates.hideFullyBlocked = hideFullyBlocked;
   if (typeof blockFromAppointments === "boolean") updates.blockFromAppointments = blockFromAppointments;
@@ -155,6 +157,9 @@ router.patch("/teachers/me/settings", requireTeacherSession, async (req, res) =>
   }
   if (typeof numChoices === "number" && Number.isInteger(numChoices) && numChoices >= 1 && numChoices <= 5) {
     updates.totalPages = numChoices * 3 + 1;
+  }
+  if (typeof minStudentsPerSlot === "number" && Number.isInteger(minStudentsPerSlot) && minStudentsPerSlot >= 1) {
+    updates.minStudentsPerSlot = minStudentsPerSlot;
   }
   if (typeof maxStudentsPerSlot === "number" && Number.isInteger(maxStudentsPerSlot) && maxStudentsPerSlot >= 1) {
     updates.maxStudentsPerSlot = maxStudentsPerSlot;
