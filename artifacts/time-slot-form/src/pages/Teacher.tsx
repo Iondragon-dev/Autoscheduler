@@ -3285,6 +3285,67 @@ export default function Teacher() {
                   </p>
                 </div>
 
+                {/* Slot Capacities Panel */}
+                {(slots ?? []).length > 0 && (
+                  <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm font-semibold text-foreground">Students per Slot</span>
+                      <span className="text-xs text-muted-foreground ml-auto">Set a cap for each slot (default: unlimited)</span>
+                    </div>
+                    <div className="space-y-2">
+                      {(slots ?? []).map(slot => {
+                        const current = slot.maxStudents ?? null;
+                        return (
+                          <div key={slot.id} className="flex items-center gap-3">
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm text-foreground truncate block">{slot.label}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                disabled={current === null || current <= 1}
+                                onClick={() => {
+                                  const next = current === null ? null : Math.max(1, current - 1);
+                                  updateSlot.mutate({ id: slot.id, data: { maxStudents: next } }, { onSuccess: () => refetchSlots() });
+                                }}
+                                className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-base font-medium"
+                              >
+                                −
+                              </button>
+                              <span className={cn("w-10 text-center text-sm font-semibold tabular-nums", current === null ? "text-muted-foreground" : "text-foreground")}>
+                                {current === null ? "∞" : current}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = current === null ? 1 : current + 1;
+                                  updateSlot.mutate({ id: slot.id, data: { maxStudents: next } }, { onSuccess: () => refetchSlots() });
+                                }}
+                                className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-base font-medium"
+                              >
+                                +
+                              </button>
+                              {current !== null && (
+                                <button
+                                  type="button"
+                                  title="Remove limit"
+                                  onClick={() => {
+                                    updateSlot.mutate({ id: slot.id, data: { maxStudents: null } }, { onSuccess: () => refetchSlots() });
+                                  }}
+                                  className="ml-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* AI Preferences Panel */}
                 <div className="rounded-xl border border-primary/25 bg-primary/5 p-4 space-y-3">
                   <div className="flex items-center gap-2">

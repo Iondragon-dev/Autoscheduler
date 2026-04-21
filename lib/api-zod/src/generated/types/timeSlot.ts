@@ -15,4 +15,5 @@ export interface TimeSlot {
   available: boolean;
   hideWhenFull?: boolean;
   blockedTimes?: TimeSlotBlockedTimesItem[];
+  maxStudents?: number | null;
 }

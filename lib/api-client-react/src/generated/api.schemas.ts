@@ -22,6 +22,7 @@ export interface TimeSlot {
   available: boolean;
   hideWhenFull?: boolean;
   blockedTimes?: TimeSlotBlockedTimesItem[];
+  maxStudents?: number | null;
 }
 
 export interface CreateTimeSlotRequest {
@@ -36,6 +37,7 @@ export interface UpdateTimeSlotRequest {
   startTime?: string;
   endTime?: string;
   hideWhenFull?: boolean;
+  maxStudents?: number | null;
 }
 
 export interface Booking {

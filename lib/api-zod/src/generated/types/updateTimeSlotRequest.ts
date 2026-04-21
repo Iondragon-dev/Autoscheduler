@@ -12,4 +12,5 @@ export interface UpdateTimeSlotRequest {
   startTime?: string;
   endTime?: string;
   hideWhenFull?: boolean;
+  maxStudents?: number | null;
 }

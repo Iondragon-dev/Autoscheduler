@@ -15,6 +15,7 @@ function serializeSlot(s: typeof timeSlotsTable.$inferSelect) {
     available: s.available,
     hideWhenFull: s.hideWhenFull,
     blockedTimes: s.blockedTimes ?? [],
+    maxStudents: s.maxStudents ?? null,
   };
 }
 
@@ -125,12 +126,13 @@ router.patch("/timeslots/:id", requireTeacherSession, async (req, res) => {
   const parsed = UpdateTimeSlotBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ message: "Invalid request body" }); return; }
 
-  const updates: Partial<{ label: string; startTime: string; endTime: string; available: boolean; hideWhenFull: boolean }> = {};
+  const updates: Partial<{ label: string; startTime: string; endTime: string; available: boolean; hideWhenFull: boolean; maxStudents: number | null }> = {};
   if (parsed.data.available !== undefined) updates.available = parsed.data.available;
   if (parsed.data.hideWhenFull !== undefined) updates.hideWhenFull = parsed.data.hideWhenFull;
   if (parsed.data.label !== undefined) updates.label = parsed.data.label;
   if (parsed.data.startTime !== undefined) updates.startTime = parsed.data.startTime;
   if (parsed.data.endTime !== undefined) updates.endTime = parsed.data.endTime;
+  if ("maxStudents" in parsed.data) updates.maxStudents = parsed.data.maxStudents ?? null;
 
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ message: "No fields to update." });
@@ -440,13 +442,23 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
     return { slotId, startMins, endMins, key: p };
   };
 
-  // Track assigned intervals per slot so overlap (not just exact match) is detected
+  // Track assigned intervals per slot so overlap (not just exact match) is detected.
+  // Also track student count per slot to enforce the teacher-set maxStudents cap.
   const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
+  const assignedCountBySlot = new Map<number, number>();
+  const slotAtCapacity = (slotId: number) => {
+    const slot = allSlots.find(s => s.id === slotId);
+    const max = slot?.maxStudents ?? null;
+    if (max === null) return false;
+    return (assignedCountBySlot.get(slotId) ?? 0) >= max;
+  };
   const overlapsAssigned = (slotId: number, start: number, end: number) =>
+    slotAtCapacity(slotId) ||
     (assignedBySlot.get(slotId) ?? []).some(iv => start < iv.end && end > iv.start);
   const markAssigned = (slotId: number, start: number, end: number) => {
     if (!assignedBySlot.has(slotId)) assignedBySlot.set(slotId, []);
     assignedBySlot.get(slotId)!.push({ start, end });
+    assignedCountBySlot.set(slotId, (assignedCountBySlot.get(slotId) ?? 0) + 1);
   };
 
   // Parse all priorities for each booking up front (up to 5)
@@ -607,13 +619,21 @@ async function scheduleUnassigned(teacherId: number, lastBookingId: number) {
     return { slotId, startMins: toMins(range.slice(0, di)), endMins: toMins(range.slice(di + 1)), key: p };
   };
 
-  // Pre-populate already-assigned intervals so we don't double-book
+  // Pre-populate already-assigned intervals so we don't double-book.
+  // Also track per-slot student counts to enforce maxStudents cap.
   const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
+  const assignedCountBySlot = new Map<number, number>();
+  const slotFull = (slotId: number) => {
+    const max = allSlots.find(s => s.id === slotId)?.maxStudents ?? null;
+    return max !== null && (assignedCountBySlot.get(slotId) ?? 0) >= max;
+  };
   const overlaps = (slotId: number, s: number, e: number) =>
+    slotFull(slotId) ||
     (assignedBySlot.get(slotId) ?? []).some(iv => s < iv.end && e > iv.start);
   const mark = (slotId: number, s: number, e: number) => {
     if (!assignedBySlot.has(slotId)) assignedBySlot.set(slotId, []);
     assignedBySlot.get(slotId)!.push({ start: s, end: e });
+    assignedCountBySlot.set(slotId, (assignedCountBySlot.get(slotId) ?? 0) + 1);
   };
 
   for (const b of allBookings) {

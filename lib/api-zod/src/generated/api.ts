@@ -33,6 +33,7 @@ export const GetTimeSlotsResponseItem = zod.object({
       }),
     )
     .optional(),
+  maxStudents: zod.number().nullable().optional(),
 });
 export const GetTimeSlotsResponse = zod.array(GetTimeSlotsResponseItem);
 
@@ -58,6 +59,7 @@ export const UpdateTimeSlotBody = zod.object({
   startTime: zod.string().optional(),
   endTime: zod.string().optional(),
   hideWhenFull: zod.boolean().optional(),
+  maxStudents: zod.number().min(1).nullable().optional(),
 });
 
 export const UpdateTimeSlotResponse = zod.object({
@@ -75,6 +77,7 @@ export const UpdateTimeSlotResponse = zod.object({
       }),
     )
     .optional(),
+  maxStudents: zod.number().nullable().optional(),
 });
 
 /**

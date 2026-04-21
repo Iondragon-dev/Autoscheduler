@@ -301,11 +301,18 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
     };
 
     const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
+    const assignedCountBySlot = new Map<number, number>();
+    const slotAtCapacity = (slotId: number) => {
+      const max = allSlots.find(s => s.id === slotId)?.maxStudents ?? null;
+      return max !== null && (assignedCountBySlot.get(slotId) ?? 0) >= max;
+    };
     const overlapsAssigned = (slotId: number, start: number, end: number) =>
+      slotAtCapacity(slotId) ||
       (assignedBySlot.get(slotId) ?? []).some(iv => start < iv.end && end > iv.start);
     const markAssigned = (slotId: number, start: number, end: number) => {
       if (!assignedBySlot.has(slotId)) assignedBySlot.set(slotId, []);
       assignedBySlot.get(slotId)!.push({ start, end });
+      assignedCountBySlot.set(slotId, (assignedCountBySlot.get(slotId) ?? 0) + 1);
     };
 
     // Parse priorities in AI-determined order (tie-breaking uses this order)

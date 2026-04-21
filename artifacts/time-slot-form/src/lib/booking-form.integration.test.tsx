@@ -11,6 +11,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Router } from "wouter";
+import Home from "@/pages/Home";
 
 // ─── Silence missing env var warnings ────────────────────────────────────────
 vi.stubEnv("VITE_API_BASE", "");
@@ -38,21 +39,24 @@ vi.mock("wouter", async (importOriginal) => {
   };
 });
 
-// ─── Lucide icons: lightweight stubs ─────────────────────────────────────────
-vi.mock("lucide-react", () => {
+// ─── Lucide icons: replace every named export with a no-op span ──────────────
+vi.mock("lucide-react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("lucide-react")>();
   const Stub = ({ className }: { className?: string }) =>
     React.createElement("span", { className, "aria-hidden": true });
-  return new Proxy({} as Record<string, unknown>, {
-    get: (_, prop) => (prop === "__esModule" ? false : Stub),
-  });
+  const stubbed: Record<string, unknown> = {};
+  for (const key of Object.keys(actual)) {
+    stubbed[key] = Stub;
+  }
+  return stubbed;
 });
 
 // ─── Mock teacher / slot data ─────────────────────────────────────────────────
 const MOCK_SLOT = {
   id: 1,
-  label: "Monday 9:00 – 10:00",
+  label: "Monday 9:00 – 12:00",
   startTime: "09:00",
-  endTime: "10:00",
+  endTime: "12:00",
   available: true,
   hideWhenFull: true,
   blockedTimes: [],
@@ -85,7 +89,6 @@ function makeQueryClient() {
 
 function renderHome() {
   const qc = makeQueryClient();
-  const Home = require("@/pages/Home").default as React.ComponentType;
   return {
     qc,
     user: userEvent.setup(),
@@ -99,7 +102,7 @@ function renderHome() {
   };
 }
 
-/** Clicks through one complete 3-sub-page choice: picks slot, picks duration, picks first time */
+/** Clicks through one complete 3-sub-page choice: picks slot, picks duration, picks first available time */
 async function fillOneChoice(user: ReturnType<typeof userEvent.setup>) {
   // subPage 0: slot picker
   const slotBtn = await screen.findByText(MOCK_SLOT.label);
@@ -117,9 +120,19 @@ async function fillOneChoice(user: ReturnType<typeof userEvent.setup>) {
   expect(next1).not.toBeDisabled();
   await user.click(next1);
 
-  // subPage 2: time picker — click first available time
-  const time = await screen.findByText("9:00 AM");
-  await user.click(time);
+  // subPage 2: time picker — click the first enabled time button
+  await waitFor(async () => {
+    const timeButtons = screen.getAllByRole("button").filter(b => {
+      const txt = b.textContent ?? "";
+      return /\d+:\d{2}\s*(AM|PM)/i.test(txt) && !b.hasAttribute("disabled");
+    });
+    expect(timeButtons.length).toBeGreaterThan(0);
+  });
+  const firstTime = screen.getAllByRole("button").find(b => {
+    const txt = b.textContent ?? "";
+    return /\d+:\d{2}\s*(AM|PM)/i.test(txt) && !b.hasAttribute("disabled");
+  })!;
+  await user.click(firstTime);
 
   const next2 = await screen.findByText(/^Next/);
   expect(next2).not.toBeDisabled();
@@ -315,7 +328,7 @@ describe("Submission: invalid details (page 9)", () => {
   it("shows only email error when name is filled but email is blank", async () => {
     const { user } = renderHome();
     await goToDetails(user);
-    await user.type(screen.getByPlaceholderText(/your name/i), "Alice");
+    await user.type(screen.getByPlaceholderText(/Jane Doe/i), "Alice");
     await user.click(screen.getByText("Submit Request"));
     await screen.findByText("Email is required");
     expect(screen.queryByText("Name is required")).not.toBeInTheDocument();
@@ -324,8 +337,8 @@ describe("Submission: invalid details (page 9)", () => {
   it("shows email format error for a malformed email", async () => {
     const { user } = renderHome();
     await goToDetails(user);
-    await user.type(screen.getByPlaceholderText(/your name/i), "Alice");
-    await user.type(screen.getByPlaceholderText(/email/i), "not-an-email");
+    await user.type(screen.getByPlaceholderText(/Jane Doe/i), "Alice");
+    await user.type(screen.getByPlaceholderText(/jane@example/i), "not-an-email");
     await user.click(screen.getByText("Submit Request"));
     await screen.findByText("Please enter a valid email");
   });
@@ -347,8 +360,8 @@ describe("Submission: valid details (page 9)", () => {
     const fetchMock = setupFetch();
     const { user } = renderHome();
     await goToDetails(user);
-    await user.type(screen.getByPlaceholderText(/your name/i), "Alice");
-    await user.type(screen.getByPlaceholderText(/email/i), "alice@example.com");
+    await user.type(screen.getByPlaceholderText(/Jane Doe/i), "Alice");
+    await user.type(screen.getByPlaceholderText(/jane@example/i), "alice@example.com");
     await user.click(screen.getByText("Submit Request"));
     await waitFor(() => {
       const postCalls = (fetchMock.mock.calls as [string, RequestInit | undefined][])
