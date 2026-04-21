@@ -445,17 +445,13 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
     return { slotId, startMins, endMins, key: p };
   };
 
-  // Track assigned intervals per slot so overlap (not just exact match) is detected.
-  // Also track student count per slot to enforce the teacher-set maxStudents cap.
-  const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
+  // Track student count per slot to enforce the teacher-set maxStudents cap.
+  // Multiple students can share the same time window within a slot (group sessions),
+  // so we only gate on headcount — not on interval overlap.
   const assignedCountBySlot = new Map<number, number>();
   const slotAtCapacity = (slotId: number) => (assignedCountBySlot.get(slotId) ?? 0) >= maxPerSlot;
-  const overlapsAssigned = (slotId: number, start: number, end: number) =>
-    slotAtCapacity(slotId) ||
-    (assignedBySlot.get(slotId) ?? []).some(iv => start < iv.end && end > iv.start);
-  const markAssigned = (slotId: number, start: number, end: number) => {
-    if (!assignedBySlot.has(slotId)) assignedBySlot.set(slotId, []);
-    assignedBySlot.get(slotId)!.push({ start, end });
+  const overlapsAssigned = (slotId: number, _start: number, _end: number) => slotAtCapacity(slotId);
+  const markAssigned = (slotId: number, _start: number, _end: number) => {
     assignedCountBySlot.set(slotId, (assignedCountBySlot.get(slotId) ?? 0) + 1);
   };
 
@@ -620,17 +616,13 @@ async function scheduleUnassigned(teacherId: number, lastBookingId: number) {
     return { slotId, startMins: toMins(range.slice(0, di)), endMins: toMins(range.slice(di + 1)), key: p };
   };
 
-  // Pre-populate already-assigned intervals so we don't double-book.
-  // Also track per-slot student counts to enforce the teacher's universal cap.
-  const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
+  // Track per-slot student counts to enforce the teacher's universal cap.
+  // Multiple students can share the same time window (group sessions), so we
+  // only gate on headcount — not on interval overlap.
   const assignedCountBySlot = new Map<number, number>();
   const slotFull = (slotId: number) => (assignedCountBySlot.get(slotId) ?? 0) >= maxPerSlot;
-  const overlaps = (slotId: number, s: number, e: number) =>
-    slotFull(slotId) ||
-    (assignedBySlot.get(slotId) ?? []).some(iv => s < iv.end && e > iv.start);
-  const mark = (slotId: number, s: number, e: number) => {
-    if (!assignedBySlot.has(slotId)) assignedBySlot.set(slotId, []);
-    assignedBySlot.get(slotId)!.push({ start: s, end: e });
+  const overlaps = (slotId: number, _s: number, _e: number) => slotFull(slotId);
+  const mark = (slotId: number, _s: number, _e: number) => {
     assignedCountBySlot.set(slotId, (assignedCountBySlot.get(slotId) ?? 0) + 1);
   };
 

@@ -303,15 +303,12 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
       return { slotId, startMins, endMins, key: p };
     };
 
-    const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
+    // Only gate on headcount — multiple students may share the same time window
+    // (group sessions), so interval overlap is not a valid block condition.
     const assignedCountBySlot = new Map<number, number>();
     const slotAtCapacity = (slotId: number) => (assignedCountBySlot.get(slotId) ?? 0) >= maxPerSlot;
-    const overlapsAssigned = (slotId: number, start: number, end: number) =>
-      slotAtCapacity(slotId) ||
-      (assignedBySlot.get(slotId) ?? []).some(iv => start < iv.end && end > iv.start);
-    const markAssigned = (slotId: number, start: number, end: number) => {
-      if (!assignedBySlot.has(slotId)) assignedBySlot.set(slotId, []);
-      assignedBySlot.get(slotId)!.push({ start, end });
+    const overlapsAssigned = (slotId: number, _start: number, _end: number) => slotAtCapacity(slotId);
+    const markAssigned = (slotId: number, _start: number, _end: number) => {
       assignedCountBySlot.set(slotId, (assignedCountBySlot.get(slotId) ?? 0) + 1);
     };
 
