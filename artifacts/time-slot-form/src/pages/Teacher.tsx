@@ -3291,7 +3291,7 @@ export default function Teacher() {
                     <div className="flex items-center gap-2">
                       <Users className="w-4 h-4 text-muted-foreground shrink-0" />
                       <span className="text-sm font-semibold text-foreground">Students per Slot</span>
-                      <span className="text-xs text-muted-foreground ml-auto">Set a cap for each slot (default: unlimited)</span>
+                      <span className="text-xs text-muted-foreground ml-auto">Set a cap for each slot (default: 1)</span>
                     </div>
                     <div className="space-y-2">
                       {(slots ?? []).map(slot => {

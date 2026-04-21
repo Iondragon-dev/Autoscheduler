@@ -25,7 +25,7 @@ export const timeSlotsTable = pgTable("time_slots", {
   available: boolean("available").notNull().default(true),
   hideWhenFull: boolean("hide_when_full").notNull().default(true),
   blockedTimes: json("blocked_times").$type<Array<{ start: string; end: string }>>(),
-  maxStudents: integer("max_students"),
+  maxStudents: integer("max_students").default(1),
 });
 
 export const bookingsTable = pgTable("bookings", {
