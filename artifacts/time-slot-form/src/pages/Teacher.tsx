@@ -3295,7 +3295,7 @@ export default function Teacher() {
                     </div>
                     <div className="space-y-2">
                       {(slots ?? []).map(slot => {
-                        const current = slot.maxStudents ?? null;
+                        const current = slot.maxStudents ?? 1;
                         return (
                           <div key={slot.id} className="flex items-center gap-3">
                             <div className="flex-1 min-w-0">
@@ -3304,32 +3304,30 @@ export default function Teacher() {
                             <div className="flex items-center gap-1.5 shrink-0">
                               <button
                                 type="button"
-                                disabled={current === null || current <= 1}
+                                disabled={current <= 1}
                                 onClick={() => {
-                                  const next = current === null ? null : Math.max(1, current - 1);
-                                  updateSlot.mutate({ id: slot.id, data: { maxStudents: next } }, { onSuccess: () => refetchSlots() });
+                                  updateSlot.mutate({ id: slot.id, data: { maxStudents: Math.max(1, current - 1) } }, { onSuccess: () => refetchSlots() });
                                 }}
                                 className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-base font-medium"
                               >
                                 −
                               </button>
-                              <span className={cn("w-10 text-center text-sm font-semibold tabular-nums", current === null ? "text-muted-foreground" : "text-foreground")}>
-                                {current === null ? "∞" : current}
+                              <span className="w-10 text-center text-sm font-semibold tabular-nums text-foreground">
+                                {current}
                               </span>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const next = current === null ? 1 : current + 1;
-                                  updateSlot.mutate({ id: slot.id, data: { maxStudents: next } }, { onSuccess: () => refetchSlots() });
+                                  updateSlot.mutate({ id: slot.id, data: { maxStudents: current + 1 } }, { onSuccess: () => refetchSlots() });
                                 }}
                                 className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-base font-medium"
                               >
                                 +
                               </button>
-                              {current !== null && (
+                              {slot.maxStudents !== null && slot.maxStudents > 1 && (
                                 <button
                                   type="button"
-                                  title="Remove limit"
+                                  title="Reset to default"
                                   onClick={() => {
                                     updateSlot.mutate({ id: slot.id, data: { maxStudents: null } }, { onSuccess: () => refetchSlots() });
                                   }}
