@@ -7,7 +7,7 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Router } from "wouter";
@@ -103,7 +103,7 @@ function renderHome() {
 }
 
 /** Clicks through one complete 3-sub-page choice: picks slot, picks duration, picks first available time */
-async function fillOneChoice(user: ReturnType<typeof userEvent.setup>) {
+async function fillOneChoice(user: ReturnType<typeof userEvent.setup>, time = "09:00") {
   // subPage 0: slot picker
   const slotBtn = await screen.findByText(MOCK_SLOT.label);
   await user.click(slotBtn);
@@ -120,19 +120,15 @@ async function fillOneChoice(user: ReturnType<typeof userEvent.setup>) {
   expect(next1).not.toBeDisabled();
   await user.click(next1);
 
-  // subPage 2: time picker — click the first enabled time button
-  await waitFor(async () => {
-    const timeButtons = screen.getAllByRole("button").filter(b => {
-      const txt = b.textContent ?? "";
-      return /\d+:\d{2}\s*(AM|PM)/i.test(txt) && !b.hasAttribute("disabled");
-    });
-    expect(timeButtons.length).toBeGreaterThan(0);
+  // subPage 2: open time input — change value then click Confirm
+  const timeInput = await waitFor(() => {
+    const el = document.querySelector<HTMLInputElement>('input[type="time"]');
+    if (!el) throw new Error("time input not found");
+    return el;
   });
-  const firstTime = screen.getAllByRole("button").find(b => {
-    const txt = b.textContent ?? "";
-    return /\d+:\d{2}\s*(AM|PM)/i.test(txt) && !b.hasAttribute("disabled");
-  })!;
-  await user.click(firstTime);
+  fireEvent.change(timeInput, { target: { value: time } });
+  const confirmBtn = await screen.findByRole("button", { name: /^Confirm:/i });
+  await user.click(confirmBtn);
 
   const next2 = await screen.findByText(/^Next/);
   expect(next2).not.toBeDisabled();
@@ -260,23 +256,30 @@ describe("Time picker (page 2)", () => {
     await user.click(screen.getByText(/^Next/));
   }
 
-  it("shows available start times", async () => {
+  it("shows the open time input and window info", async () => {
     const { user } = renderHome();
     await goToTime(user);
-    await screen.findByText("9:00 AM");
+    await screen.findByText(/What time works for you/i);
+    await waitFor(() => expect(document.querySelector('input[type="time"]')).toBeTruthy());
   });
 
-  it("Next is disabled until a time is selected", async () => {
+  it("Next is disabled until a time is entered and confirmed", async () => {
     const { user } = renderHome();
     await goToTime(user);
-    await screen.findByText("9:00 AM");
+    await waitFor(() => expect(document.querySelector('input[type="time"]')).toBeTruthy());
     expect(screen.getByText(/^Next/)).toBeDisabled();
   });
 
-  it("Next becomes enabled after selecting a time", async () => {
+  it("Next becomes enabled after entering and confirming a time", async () => {
     const { user } = renderHome();
     await goToTime(user);
-    await user.click(await screen.findByText("9:00 AM"));
+    const timeInput = await waitFor(() => {
+      const el = document.querySelector<HTMLInputElement>('input[type="time"]');
+      if (!el) throw new Error("time input not found");
+      return el;
+    });
+    fireEvent.change(timeInput, { target: { value: "09:00" } });
+    await user.click(await screen.findByRole("button", { name: /^Confirm:/i }));
     expect(screen.getByText(/^Next/)).not.toBeDisabled();
   });
 });
@@ -308,11 +311,11 @@ describe("Submission: invalid details (page 9)", () => {
     await waitFor(() => screen.getByText("Book a Session"));
     await user.click(screen.getByText("Book a Session"));
     // Choice 1 (pages 0-2)
-    await fillOneChoice(user);
+    await fillOneChoice(user, "09:00");
     // Choice 2 (pages 3-5)
-    await fillOneChoice(user);
+    await fillOneChoice(user, "09:30");
     // Choice 3 (pages 6-8)
-    await fillOneChoice(user);
+    await fillOneChoice(user, "10:00");
     // Now on page 9 (details)
     await screen.findByText("Submit Request");
   }
@@ -350,9 +353,9 @@ describe("Submission: valid details (page 9)", () => {
   async function goToDetails(user: ReturnType<typeof userEvent.setup>) {
     await waitFor(() => screen.getByText("Book a Session"));
     await user.click(screen.getByText("Book a Session"));
-    await fillOneChoice(user);
-    await fillOneChoice(user);
-    await fillOneChoice(user);
+    await fillOneChoice(user, "09:00");
+    await fillOneChoice(user, "09:30");
+    await fillOneChoice(user, "10:00");
     await screen.findByText("Submit Request");
   }
 
