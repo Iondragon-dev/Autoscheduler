@@ -421,6 +421,9 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
   const apply = req.body?.apply === true;
   const teacherId = res.locals.teacherId;
 
+  const [teacher] = await db.select({ maxStudentsPerSlot: teachersTable.maxStudentsPerSlot }).from(teachersTable).where(eq(teachersTable.id, teacherId)).limit(1);
+  const maxPerSlot = teacher?.maxStudentsPerSlot ?? 1;
+
   const allSlots = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.teacherId, teacherId));
   const slotIds = allSlots.map(s => s.id);
   const allBookings = slotIds.length > 0
@@ -446,12 +449,7 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
   // Also track student count per slot to enforce the teacher-set maxStudents cap.
   const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
   const assignedCountBySlot = new Map<number, number>();
-  const slotAtCapacity = (slotId: number) => {
-    const slot = allSlots.find(s => s.id === slotId);
-    const max = slot?.maxStudents ?? null;
-    if (max === null) return false;
-    return (assignedCountBySlot.get(slotId) ?? 0) >= max;
-  };
+  const slotAtCapacity = (slotId: number) => (assignedCountBySlot.get(slotId) ?? 0) >= maxPerSlot;
   const overlapsAssigned = (slotId: number, start: number, end: number) =>
     slotAtCapacity(slotId) ||
     (assignedBySlot.get(slotId) ?? []).some(iv => start < iv.end && end > iv.start);
@@ -599,6 +597,9 @@ async function syncBlockedTimes(slotIds: number[]) {
 // Run the scheduler over all currently unassigned bookings for a teacher,
 // forcing `lastBookingId` to be processed last (lowest priority).
 async function scheduleUnassigned(teacherId: number, lastBookingId: number) {
+  const [teacherRow] = await db.select({ maxStudentsPerSlot: teachersTable.maxStudentsPerSlot }).from(teachersTable).where(eq(teachersTable.id, teacherId)).limit(1);
+  const maxPerSlot = teacherRow?.maxStudentsPerSlot ?? 1;
+
   const allSlots = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.teacherId, teacherId));
   const slotIds = allSlots.map(s => s.id);
   if (slotIds.length === 0) return;
@@ -620,13 +621,10 @@ async function scheduleUnassigned(teacherId: number, lastBookingId: number) {
   };
 
   // Pre-populate already-assigned intervals so we don't double-book.
-  // Also track per-slot student counts to enforce maxStudents cap.
+  // Also track per-slot student counts to enforce the teacher's universal cap.
   const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
   const assignedCountBySlot = new Map<number, number>();
-  const slotFull = (slotId: number) => {
-    const max = allSlots.find(s => s.id === slotId)?.maxStudents ?? null;
-    return max !== null && (assignedCountBySlot.get(slotId) ?? 0) >= max;
-  };
+  const slotFull = (slotId: number) => (assignedCountBySlot.get(slotId) ?? 0) >= maxPerSlot;
   const overlaps = (slotId: number, s: number, e: number) =>
     slotFull(slotId) ||
     (assignedBySlot.get(slotId) ?? []).some(iv => s < iv.end && e > iv.start);

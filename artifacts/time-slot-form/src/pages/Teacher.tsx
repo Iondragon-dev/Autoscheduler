@@ -2248,6 +2248,7 @@ export default function Teacher() {
   const [blockFromAppointments, setBlockFromAppointments] = useState(true);
   const [durationOptions, setDurationOptions] = useState<DurationOption[] | null>(null);
   const [numChoices, setNumChoices] = useState(3);
+  const [maxStudentsPerSlot, setMaxStudentsPerSlot] = useState(1);
   const [showDurationDialog, setShowDurationDialog] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
@@ -2271,6 +2272,7 @@ export default function Teacher() {
         if (Array.isArray(d.durationOptions)) setDurationOptions(d.durationOptions);
         else setDurationOptions(null);
         if (typeof d.numChoices === "number" && d.numChoices >= 1 && d.numChoices <= 5) setNumChoices(d.numChoices);
+        if (typeof d.maxStudentsPerSlot === "number" && d.maxStudentsPerSlot >= 1) setMaxStudentsPerSlot(d.maxStudentsPerSlot);
       })
       .catch(() => {});
   }, []);
@@ -2463,6 +2465,16 @@ export default function Teacher() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ numChoices: next }),
+    });
+  };
+
+  const handleSetMaxStudentsPerSlot = async (n: number) => {
+    const next = Math.max(1, n);
+    setMaxStudentsPerSlot(next);
+    await adminFetch(`${import.meta.env.BASE_URL}api/teachers/me/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ maxStudentsPerSlot: next }),
     });
   };
 
@@ -3286,63 +3298,32 @@ export default function Teacher() {
                 </div>
 
                 {/* Slot Capacities Panel */}
-                {(slots ?? []).length > 0 && (
-                  <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 text-muted-foreground shrink-0" />
-                      <span className="text-sm font-semibold text-foreground">Students per Slot</span>
-                      <span className="text-xs text-muted-foreground ml-auto">Set a cap for each slot (default: 1)</span>
-                    </div>
-                    <div className="space-y-2">
-                      {(slots ?? []).map(slot => {
-                        const current = slot.maxStudents ?? 1;
-                        return (
-                          <div key={slot.id} className="flex items-center gap-3">
-                            <div className="flex-1 min-w-0">
-                              <span className="text-sm text-foreground truncate block">{slot.label}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button
-                                type="button"
-                                disabled={current <= 1}
-                                onClick={() => {
-                                  updateSlot.mutate({ id: slot.id, data: { maxStudents: Math.max(1, current - 1) } }, { onSuccess: () => refetchSlots() });
-                                }}
-                                className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-base font-medium"
-                              >
-                                −
-                              </button>
-                              <span className="w-10 text-center text-sm font-semibold tabular-nums text-foreground">
-                                {current}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  updateSlot.mutate({ id: slot.id, data: { maxStudents: current + 1 } }, { onSuccess: () => refetchSlots() });
-                                }}
-                                className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-base font-medium"
-                              >
-                                +
-                              </button>
-                              {slot.maxStudents !== null && slot.maxStudents > 1 && (
-                                <button
-                                  type="button"
-                                  title="Reset to default"
-                                  onClick={() => {
-                                    updateSlot.mutate({ id: slot.id, data: { maxStudents: null } }, { onSuccess: () => refetchSlots() });
-                                  }}
-                                  className="ml-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
+                <div className="rounded-xl border border-border bg-muted/20 p-4">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm font-semibold text-foreground">Students per Slot</span>
+                    <div className="ml-auto flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={maxStudentsPerSlot <= 1}
+                        onClick={() => handleSetMaxStudentsPerSlot(maxStudentsPerSlot - 1)}
+                        className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-base font-medium"
+                      >
+                        −
+                      </button>
+                      <span className="w-10 text-center text-sm font-semibold tabular-nums text-foreground">
+                        {maxStudentsPerSlot}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleSetMaxStudentsPerSlot(maxStudentsPerSlot + 1)}
+                        className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-base font-medium"
+                      >
+                        +
+                      </button>
                     </div>
                   </div>
-                )}
+                </div>
 
                 {/* AI Preferences Panel */}
                 <div className="rounded-xl border border-primary/25 bg-primary/5 p-4 space-y-3">

@@ -13,6 +13,7 @@ export const teachersTable = pgTable("teachers", {
   blockFromAppointments: boolean("block_from_appointments").notNull().default(true),
   durationOptions: json("duration_options").$type<Array<{ label: string; value: number }>>(),
   totalPages: integer("total_pages").notNull().default(10),
+  maxStudentsPerSlot: integer("max_students_per_slot").default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

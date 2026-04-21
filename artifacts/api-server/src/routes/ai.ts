@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { requireTeacherSession } from "./auth";
-import { db, bookingsTable, timeSlotsTable } from "@workspace/db";
+import { db, bookingsTable, timeSlotsTable, teachersTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -199,6 +199,9 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
   }
 
   const teacherId = res.locals.teacherId;
+  const [teacherRow] = await db.select({ maxStudentsPerSlot: teachersTable.maxStudentsPerSlot }).from(teachersTable).where(eq(teachersTable.id, teacherId)).limit(1);
+  const maxPerSlot = teacherRow?.maxStudentsPerSlot ?? 1;
+
   const allSlots = await db.select().from(timeSlotsTable).where(eq(timeSlotsTable.teacherId, teacherId));
   const teacherSlotIds = allSlots.map(s => s.id);
   const allBookings = teacherSlotIds.length > 0
@@ -302,10 +305,7 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
 
     const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
     const assignedCountBySlot = new Map<number, number>();
-    const slotAtCapacity = (slotId: number) => {
-      const max = allSlots.find(s => s.id === slotId)?.maxStudents ?? null;
-      return max !== null && (assignedCountBySlot.get(slotId) ?? 0) >= max;
-    };
+    const slotAtCapacity = (slotId: number) => (assignedCountBySlot.get(slotId) ?? 0) >= maxPerSlot;
     const overlapsAssigned = (slotId: number, start: number, end: number) =>
       slotAtCapacity(slotId) ||
       (assignedBySlot.get(slotId) ?? []).some(iv => start < iv.end && end > iv.start);

@@ -113,6 +113,7 @@ router.get("/teachers/me/settings", requireTeacherSession, async (req, res) => {
       blockFromAppointments: teachersTable.blockFromAppointments,
       durationOptions: teachersTable.durationOptions,
       totalPages: teachersTable.totalPages,
+      maxStudentsPerSlot: teachersTable.maxStudentsPerSlot,
     })
     .from(teachersTable)
     .where(eq(teachersTable.id, res.locals.teacherId))
@@ -125,6 +126,7 @@ router.get("/teachers/me/settings", requireTeacherSession, async (req, res) => {
     durationOptions: teacher?.durationOptions ?? null,
     totalPages,
     numChoices,
+    maxStudentsPerSlot: teacher?.maxStudentsPerSlot ?? 1,
   });
 });
 
@@ -138,7 +140,7 @@ function isValidDurationOption(item: unknown): item is { label: string; value: n
 }
 
 router.patch("/teachers/me/settings", requireTeacherSession, async (req, res) => {
-  const { hideFullyBlocked, blockFromAppointments, durationOptions, numChoices } = req.body ?? {};
+  const { hideFullyBlocked, blockFromAppointments, durationOptions, numChoices, maxStudentsPerSlot } = req.body ?? {};
   const updates: Record<string, unknown> = {};
   if (typeof hideFullyBlocked === "boolean") updates.hideFullyBlocked = hideFullyBlocked;
   if (typeof blockFromAppointments === "boolean") updates.blockFromAppointments = blockFromAppointments;
@@ -153,6 +155,9 @@ router.patch("/teachers/me/settings", requireTeacherSession, async (req, res) =>
   }
   if (typeof numChoices === "number" && Number.isInteger(numChoices) && numChoices >= 1 && numChoices <= 5) {
     updates.totalPages = numChoices * 3 + 1;
+  }
+  if (typeof maxStudentsPerSlot === "number" && Number.isInteger(maxStudentsPerSlot) && maxStudentsPerSlot >= 1) {
+    updates.maxStudentsPerSlot = maxStudentsPerSlot;
   }
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ message: "No valid settings provided" });
