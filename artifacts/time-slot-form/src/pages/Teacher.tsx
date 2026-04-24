@@ -2845,15 +2845,19 @@ export default function Teacher() {
                       const isExpanded = expandedSlotId === slot.id;
                       const hasBookings = slotBookings.length > 0;
                       const blockedTimes = slot.blockedTimes ?? [];
+                      const assignedHere = (bookings ?? []).filter(b => (b as any).assignedTime?.startsWith(`${slot.id}|`));
                       const appointmentRanges = new Set(
-                        (bookings ?? [])
-                          .filter(b => (b as any).assignedTime?.startsWith(`${slot.id}|`))
-                          .map(b => { const at = (b as any).assignedTime as string; return at.slice(at.indexOf("|") + 1); })
+                        assignedHere.map(b => { const at = (b as any).assignedTime as string; return at.slice(at.indexOf("|") + 1); })
                       );
-                      const appointmentBlocks = blockedTimes.filter(bt => appointmentRanges.has(`${bt.start}-${bt.end}`));
+                      // Derive appointment blocks directly from assigned bookings so they appear
+                      // even when the slot still has capacity (blockedTimes only contains saturated ranges).
+                      const appointmentBlocks = [...appointmentRanges].map(range => {
+                        const di = range.indexOf("-");
+                        return { start: range.slice(0, di), end: range.slice(di + 1) };
+                      });
                       const manualBlocks = blockedTimes.filter(bt => !appointmentRanges.has(`${bt.start}-${bt.end}`));
                       const hasBlocked = blockedTimes.length > 0;
-                      const isExpandable = hasBookings || hasBlocked;
+                      const isExpandable = hasBookings || hasBlocked || assignedHere.length > 0;
                       const fullyBlocked = blockFromAppointments && slot.available && isFullyBlocked(slot.startTime, slot.endTime, blockedTimes);
                       return (
                         <motion.div key={slot.id} layout initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className={cn("rounded-xl border overflow-hidden transition-all", slot.available ? "bg-card border-border" : "bg-muted/50 border-dashed border-muted-foreground/40")}>
