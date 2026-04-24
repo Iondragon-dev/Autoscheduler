@@ -754,6 +754,8 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
   // Create schedule wizard state
   const [step, setStep] = useState<WizardStep>("days");
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  const [dayDropdownOpen, setDayDropdownOpen] = useState(false);
+  const dayDropdownRef = useRef<HTMLDivElement>(null);
   const [dayTimes, setDayTimes] = useState<Record<string, { start: string; end: string }>>({});
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
   const [aiMessage, setAiMessage] = useState("");
@@ -792,6 +794,16 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [step, aiMessage]);
   useEffect(() => { dayNavLockedRef.current = false; }, [currentDayIndex, step]);
+  useEffect(() => {
+    if (!dayDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dayDropdownRef.current && !dayDropdownRef.current.contains(e.target as Node)) {
+        setDayDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [dayDropdownOpen]);
 
   useEffect(() => {
     const el = scrollBodyRef.current;
@@ -1158,34 +1170,46 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     className="p-5 space-y-4"
                   >
                     <p className="text-sm text-foreground font-medium">Which days are you generally available?</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {ALL_DAYS.map((day) => {
-                        const checked = selectedDays.includes(day);
-                        return (
-                          <button
-                            key={day}
-                            onClick={() => toggleDay(day)}
-                            className={cn(
-                              "flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all",
-                              checked
-                                ? "bg-primary/10 border-primary text-primary"
-                                : "bg-muted/30 border-border text-foreground hover:bg-muted/60"
-                            )}
-                          >
-                            <div className={cn(
-                              "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
-                              checked ? "bg-primary border-primary" : "border-muted-foreground/40"
-                            )}>
-                              {checked && (
-                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12">
-                                  <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                              )}
-                            </div>
-                            {day}
-                          </button>
-                        );
-                      })}
+                    <div ref={dayDropdownRef} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setDayDropdownOpen((o) => !o)}
+                        className="w-full flex items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 py-2.5 text-sm shadow-sm hover:bg-muted/40 transition-colors"
+                      >
+                        <span className={cn(selectedDays.length === 0 ? "text-muted-foreground" : "text-foreground")}>
+                          {selectedDays.length === 0
+                            ? "Select days…"
+                            : ALL_DAYS.filter((d) => selectedDays.includes(d)).map((d) => DAY_SHORT[d]).join(", ")}
+                        </span>
+                        <svg className={cn("w-4 h-4 text-muted-foreground transition-transform shrink-0", dayDropdownOpen && "rotate-180")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                      </button>
+                      {dayDropdownOpen && (
+                        <div className="absolute z-50 mt-1 w-full rounded-lg border border-border bg-popover shadow-md py-1">
+                          {ALL_DAYS.map((day) => {
+                            const checked = selectedDays.includes(day);
+                            return (
+                              <button
+                                key={day}
+                                type="button"
+                                onClick={() => toggleDay(day)}
+                                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
+                              >
+                                <div className={cn(
+                                  "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
+                                  checked ? "bg-primary border-primary" : "border-muted-foreground/40"
+                                )}>
+                                  {checked && (
+                                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12">
+                                      <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                  )}
+                                </div>
+                                {day}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
                     {selectedDays.length > 0 && (
@@ -1606,20 +1630,14 @@ function AiAssistant({ onSlotsCreated, slots }: AiAssistantProps) {
                     {editOp === "add" && (
                       <div className="space-y-3">
                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">2. Pick a day</p>
-                        <div className="flex flex-wrap gap-2">
-                          {ALL_DAYS.map((d) => (
-                            <button
-                              key={d}
-                              onClick={() => { setEditAddDay(d); setEditRangeStart(""); setEditRangeEnd(""); }}
-                              className={cn(
-                                "text-xs px-3 py-1.5 rounded-full border font-medium transition-all",
-                                editAddDay === d ? "bg-primary text-primary-foreground border-primary" : "bg-background text-foreground border-border hover:border-primary/50"
-                              )}
-                            >
-                              {DAY_SHORT[d]}
-                            </button>
-                          ))}
-                        </div>
+                        <select
+                          value={editAddDay}
+                          onChange={(e) => { setEditAddDay(e.target.value); setEditRangeStart(""); setEditRangeEnd(""); }}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          <option value="">Select a day…</option>
+                          {ALL_DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+                        </select>
                         {editAddDay && (() => {
                           const timeOpts = genTimeOptions("06:00", "22:00", 30);
                           const endOpts = timeOpts.filter((t) => !editRangeStart || toMins(t) > toMins(editRangeStart));
