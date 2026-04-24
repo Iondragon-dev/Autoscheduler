@@ -14,12 +14,20 @@ export default function TeacherDirectory() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
 
-  useEffect(() => {
+  const loadTeachers = () => {
+    setLoading(true);
     fetch(`${import.meta.env.BASE_URL}api/teachers`)
       .then(r => r.json())
       .then((data: Teacher[]) => setTeachers(data))
       .catch(() => {})
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadTeachers();
+    const onUpdated = () => loadTeachers();
+    window.addEventListener("teacher-updated", onUpdated);
+    return () => window.removeEventListener("teacher-updated", onUpdated);
   }, []);
 
   const filtered = teachers.filter(t => {

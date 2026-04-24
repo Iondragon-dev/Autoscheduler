@@ -227,6 +227,7 @@ function ChangeUsernameDialog({ open, onClose }: { open: boolean; onClose: () =>
       else {
         const info = getTeacherInfo();
         if (info) sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...info, slug: data.slug, name: data.name }));
+        window.dispatchEvent(new Event("teacher-updated"));
         setSuccess(true);
       }
     } catch {
