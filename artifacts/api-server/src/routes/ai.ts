@@ -161,21 +161,27 @@ Scoring system (higher is better):
 - 1st choice assigned → +3 points
 - 2nd choice assigned → +2 points
 - 3rd choice assigned → +1 point
+- 4th or 5th choice assigned → 0 points (still assigned — avoids the -6 penalty)
 - Unassigned → -6 points
 Goal: maximise total score across all students.
 
 How the algorithm works:
-- Students submitted up to 5 ranked time preferences.
+- Students submitted up to 5 ranked time preferences (choice1 through choice5).
 - The algorithm processes students in EXACTLY the order you specify — no overrides.
 - The first student in your list gets their highest available preference, then the second, and so on.
 - Because the order is strictly respected, placement in the list is critical:
-  - Put students whose preferences are heavily contested (many others want the same slots) EARLIER so they secure a slot before it fills up.
-  - Put students who have more flexible or unique preferences LATER — they're less at risk of being left out.
-  - A student left unassigned costs -6 points — far worse than a 3rd choice (+1). Avoid leaving anyone unassigned if possible.
+  - Put students whose preferences are heavily contested (high "slotContention" values) EARLIER so they secure a slot before it fills up.
+  - Put students who have more choices ("choiceCount" is high) LATER — they're more flexible and less likely to be left unassigned.
+  - Students with "choiceCount" of 1 are the most at risk — if their single choice is taken, they go unassigned (-6). Move them early unless the teacher says otherwise.
+  - A student left unassigned costs -6 points — far worse than a 3rd choice (+1). Avoid leaving anyone unassigned if at all possible.
 - By default, students who submitted earlier are listed first (first-come, first-served).
 
+Each student in the input includes:
+- "choiceCount": how many distinct valid time preferences they submitted (1 = least flexible, 5 = most flexible).
+- The slot contention summary lists how many students requested each slot — use this to spot high-pressure slots.
+
 Your task:
-1. Read the teacher's preferences carefully, then consider which students are most at risk of being unassigned.
+1. Read the teacher's preferences carefully. Cross-reference choiceCount and slot contention to identify which students are most at risk of being left unassigned.
 2. In 2-3 sentences, explain how you are interpreting the preferences and what ordering you chose to maximise the score.
 3. Output a SCHEDULE_PARAMS block in EXACTLY this format:
 
@@ -189,7 +195,7 @@ Your task:
 Rules for studentOrder:
 - Must be an array containing ALL booking IDs from the input data (no additions, no omissions).
 - Interpret preferences creatively: "prioritize [name]" → put that student first; "randomize" → shuffle; "give late submissions a chance" → reverse submission order; "be fair" → keep original submission order.
-- If the teacher's preference is vague or doesn't clearly map to an ordering, keep the original submission order.
+- If the teacher's preference is vague or doesn't clearly map to an ordering, keep the original submission order and focus on protecting at-risk students.
 - Always output valid JSON inside the <SCHEDULE_PARAMS> block.`;
 
 router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
@@ -215,14 +221,38 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
     return;
   }
 
-  const bookingContext = allBookings.map((b) => ({
-    bookingId: b.id,
-    name: b.name,
-    submittedAt: b.createdAt,
-    choice1: b.priority1,
-    choice2: b.priority2,
-    choice3: b.priority3,
-  }));
+  // Build a slot-label lookup for contention counting
+  const slotLabelMap = new Map(allSlots.map(s => [s.id, s.label]));
+
+  // Count how many students list each slot in any of their choices
+  const slotContention = new Map<number, number>();
+  for (const b of allBookings) {
+    const seen = new Set<number>();
+    for (const p of [b.priority1, b.priority2, b.priority3, b.priority4, b.priority5]) {
+      if (!p || !p.includes("|")) continue;
+      const slotId = parseInt(p.slice(0, p.indexOf("|")));
+      if (!isNaN(slotId) && !seen.has(slotId)) {
+        seen.add(slotId);
+        slotContention.set(slotId, (slotContention.get(slotId) ?? 0) + 1);
+      }
+    }
+  }
+
+  const bookingContext = allBookings.map((b) => {
+    const choices = [b.priority1, b.priority2, b.priority3, b.priority4, b.priority5]
+      .filter((p): p is string => !!p && p.includes("|"));
+    return {
+      bookingId: b.id,
+      name: b.name,
+      submittedAt: b.createdAt,
+      choiceCount: choices.length,
+      choice1: b.priority1 || null,
+      choice2: b.priority2 || null,
+      choice3: b.priority3 || null,
+      choice4: b.priority4 || null,
+      choice5: b.priority5 || null,
+    };
+  });
 
   const slotContext = allSlots.map((s) => ({
     slotId: s.id,
@@ -231,7 +261,11 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
     endTime: s.endTime,
   }));
 
-  const contextMessage = `Available time slots:\n${JSON.stringify(slotContext, null, 2)}\n\nStudent bookings (${allBookings.length} total, in original submission order):\n${JSON.stringify(bookingContext, null, 2)}\n\nTeacher's scheduling preferences: "${preferences}"`;
+  const contentionSummary = Array.from(slotContention.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([slotId, count]) => ({ slotId, label: slotLabelMap.get(slotId) ?? String(slotId), studentsRequesting: count }));
+
+  const contextMessage = `Available time slots:\n${JSON.stringify(slotContext, null, 2)}\n\nSlot contention (students requesting each slot across all choices):\n${JSON.stringify(contentionSummary, null, 2)}\n\nStudent bookings (${allBookings.length} total, in original submission order):\n${JSON.stringify(bookingContext, null, 2)}\n\nTeacher's scheduling preferences: "${preferences}"`;
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
