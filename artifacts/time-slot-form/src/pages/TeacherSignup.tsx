@@ -21,8 +21,7 @@ export default function TeacherSignup() {
 
   function slugify(str: string) {
     return str
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/[^a-zA-Z0-9\s-]/g, "")
       .replace(/\s+/g, "-")
       .replace(/-+/g, "-")
       .slice(0, 40);
@@ -41,7 +40,7 @@ export default function TeacherSignup() {
 
     if (!name.trim()) { setError("Full name is required."); return; }
     if (!slug.trim()) { setError("Username is required."); return; }
-    if (!/^[a-z0-9-]+$/.test(slug)) { setError("Username can only contain lowercase letters, numbers, and hyphens."); return; }
+    if (!/^[a-zA-Z0-9-]+$/.test(slug)) { setError("Username can only contain letters, numbers, and hyphens."); return; }
     if (!passcode.trim()) { setError("Passcode is required."); return; }
     if (passcode.length < 4) { setError("Passcode must be at least 4 characters."); return; }
     if (passcode !== confirmPasscode) { setError("Passcodes don't match."); return; }
@@ -127,7 +126,7 @@ export default function TeacherSignup() {
                       type="text"
                       placeholder="ms-smith"
                       value={slug}
-                      onChange={e => { setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "")); setSlugManuallyEdited(true); }}
+                      onChange={e => { setSlug(e.target.value.replace(/[^a-zA-Z0-9-]/g, "")); setSlugManuallyEdited(true); }}
                       maxLength={40}
                     />
                     {slug && (

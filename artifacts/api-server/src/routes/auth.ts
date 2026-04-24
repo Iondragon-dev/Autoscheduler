@@ -137,13 +137,13 @@ router.put("/auth/teacher/slug", requireTeacherSession, async (req, res) => {
     res.status(400).json({ message: "newSlug and passcode are required." });
     return;
   }
-  const slug = newSlug.trim().toLowerCase();
+  const slug = newSlug.trim();
   if (slug.length < 3) {
     res.status(400).json({ message: "Username must be at least 3 characters." });
     return;
   }
-  if (!/^[a-z0-9-]+$/.test(slug)) {
-    res.status(400).json({ message: "Username can only contain lowercase letters, numbers, and hyphens." });
+  if (!/^[a-zA-Z0-9-]+$/.test(slug)) {
+    res.status(400).json({ message: "Username can only contain letters, numbers, and hyphens." });
     return;
   }
   const rows = await db.select().from(teachersTable).where(eq(teachersTable.id, res.locals.teacherId)).limit(1);

@@ -101,7 +101,7 @@ export default function TeacherGate({ children }: { children: ReactNode }) {
               type="text"
               placeholder="Username (e.g. ms-smith)"
               value={slug}
-              onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+              onChange={(e) => setSlug(e.target.value.replace(/[^a-zA-Z0-9-]/g, ""))}
               autoFocus
               autoComplete="username"
               error={!!error}
