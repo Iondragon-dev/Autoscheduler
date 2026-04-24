@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
 import { db, teachersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { createHmac, timingSafeEqual } from "crypto";
 
 declare global {
@@ -155,7 +155,9 @@ router.put("/auth/teacher/slug", requireTeacherSession, async (req, res) => {
     res.status(400).json({ message: "That is already your username." });
     return;
   }
-  const existing = await db.select({ id: teachersTable.id }).from(teachersTable).where(eq(teachersTable.slug, slug)).limit(1);
+  const existing = await db.select({ id: teachersTable.id }).from(teachersTable)
+    .where(and(eq(teachersTable.slug, slug), ne(teachersTable.id, res.locals.teacherId)))
+    .limit(1);
   if (existing.length) {
     res.status(409).json({ message: "That username is already taken. Please choose a different one." });
     return;
