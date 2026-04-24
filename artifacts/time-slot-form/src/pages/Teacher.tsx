@@ -2701,7 +2701,10 @@ export default function Teacher() {
             </div>
           </div>
           <h1 className="text-4xl font-display font-bold text-foreground mb-2">
-            {getTeacherInfo()?.name ?? "Teacher Area"}
+            {(() => {
+              const info = getTeacherInfo();
+              return info?.name ?? info?.slug ?? "Teacher Area";
+            })()}
           </h1>
           <p className="text-muted-foreground text-lg">Manage your schedule and view student bookings.</p>
         </div>
