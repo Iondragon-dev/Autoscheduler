@@ -211,9 +211,9 @@ function ChangeUsernameDialog({ open, onClose }: { open: boolean; onClose: () =>
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    const slug = newUsername.trim().toLowerCase();
+    const slug = newUsername.trim();
     if (slug.length < 3) { setError("Username must be at least 3 characters."); return; }
-    if (!/^[a-z0-9-]+$/.test(slug)) { setError("Only lowercase letters, numbers, and hyphens are allowed."); return; }
+    if (!/^[a-zA-Z0-9-]+$/.test(slug)) { setError("Only letters, numbers, and hyphens are allowed."); return; }
     if (!passcode) { setError("Please enter your passcode to confirm."); return; }
     setLoading(true);
     try {
@@ -282,11 +282,11 @@ function ChangeUsernameDialog({ open, onClose }: { open: boolean; onClose: () =>
                     type="text"
                     placeholder="e.g. ms-johnson"
                     value={newUsername}
-                    onChange={(e) => setNewUsername(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                    onChange={(e) => setNewUsername(e.target.value.replace(/[^a-zA-Z0-9-]/g, ""))}
                     autoFocus
                     autoComplete="off"
                   />
-                  <p className="text-xs text-muted-foreground mt-1.5">Lowercase letters, numbers, and hyphens only. Min 3 characters.</p>
+                  <p className="text-xs text-muted-foreground mt-1.5">Letters, numbers, and hyphens only. Min 3 characters.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-foreground mb-1.5">Confirm with Passcode</label>
