@@ -12,13 +12,13 @@ import {
   Clock, Plus, Trash2, ToggleLeft, ToggleRight, Users, ArrowLeft,
   AlertCircle, Calendar, ChevronDown, Mail, User, Sparkles, X,
   Bot, CheckCircle2, ArrowRight, Loader2, KeyRound, Eye, EyeOff, Ban, Upload,
-  Wand2, CheckCheck, RotateCcw, TriangleAlert, Pencil, ClipboardList,
+  Wand2, CheckCheck, RotateCcw, TriangleAlert, Pencil, ClipboardList, AtSign,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
-import { signOutTeacher, getTeacherInfo } from "./TeacherGate";
+import { signOutTeacher, getTeacherInfo, SESSION_KEY } from "./TeacherGate";
 import { fmt12, fmtPriority, toMins, fromMins, generateAllStartTimes } from "@/lib/booking-utils";
 import { DURATION_OPTIONS } from "@/lib/booking-constants";
 import JSZip from "jszip";
@@ -183,6 +183,137 @@ function ChangePasscodeDialog({ open, onClose }: { open: boolean; onClose: () =>
                   <Button type="button" variant="outline" className="flex-1" onClick={handleClose}>Cancel</Button>
                   <Button type="submit" className="flex-1" isLoading={loading}>Update</Button>
                 </div>
+              </form>
+            )}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ── Change Username Dialog ─────────────────────────────────────────────────────
+function ChangeUsernameDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [newUsername, setNewUsername] = useState("");
+  const [passcode, setPasscode] = useState("");
+  const [showPasscode, setShowPasscode] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const currentSlug = getTeacherInfo()?.slug ?? "";
+
+  function reset() {
+    setNewUsername(""); setPasscode(""); setError(""); setSuccess(false); setLoading(false); setShowPasscode(false);
+  }
+
+  function handleClose() { reset(); onClose(); }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    const slug = newUsername.trim().toLowerCase();
+    if (slug.length < 3) { setError("Username must be at least 3 characters."); return; }
+    if (!/^[a-z0-9-]+$/.test(slug)) { setError("Only lowercase letters, numbers, and hyphens are allowed."); return; }
+    if (!passcode) { setError("Please enter your passcode to confirm."); return; }
+    setLoading(true);
+    try {
+      const res = await adminFetch(`${import.meta.env.BASE_URL}api/auth/teacher/slug`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newSlug: slug, passcode }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.message ?? "Failed to update username."); }
+      else {
+        const info = getTeacherInfo();
+        if (info) sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...info, slug: data.slug }));
+        setSuccess(true);
+      }
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 16 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-sm p-6"
+          >
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <AtSign className="w-4 h-4 text-primary" />
+                </div>
+                <h2 className="text-lg font-bold font-display">Change Username</h2>
+              </div>
+              <button onClick={handleClose} className="text-muted-foreground hover:text-foreground transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {success ? (
+              <div className="text-center py-4">
+                <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                <p className="font-semibold text-foreground mb-1">Username updated!</p>
+                <p className="text-sm text-muted-foreground mb-5">Your booking link now uses <span className="font-mono font-medium text-foreground">{getTeacherInfo()?.slug}</span>.</p>
+                <Button onClick={handleClose} className="w-full">Done</Button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-3">Current username: <span className="font-mono font-semibold text-foreground">{currentSlug}</span></p>
+                  <label className="block text-sm font-semibold text-foreground mb-1.5">New Username</label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. ms-johnson"
+                    value={newUsername}
+                    onChange={(e) => setNewUsername(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                    autoFocus
+                    autoComplete="off"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1.5">Lowercase letters, numbers, and hyphens only. Min 3 characters.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-foreground mb-1.5">Confirm with Passcode</label>
+                  <div className="relative">
+                    <Input
+                      type={showPasscode ? "text" : "password"}
+                      placeholder="Enter your current passcode"
+                      value={passcode}
+                      onChange={(e) => setPasscode(e.target.value)}
+                      className="pr-10"
+                    />
+                    <button type="button" tabIndex={-1} onClick={() => setShowPasscode(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                      {showPasscode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <AnimatePresence>
+                  {error && (
+                    <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                      className="text-sm font-medium text-destructive flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 shrink-0" />{error}
+                    </motion.p>
+                  )}
+                </AnimatePresence>
+                <Button type="submit" className="w-full" isLoading={loading} disabled={!newUsername || !passcode}>
+                  Update Username
+                </Button>
               </form>
             )}
           </motion.div>
@@ -2231,6 +2362,7 @@ export default function Teacher() {
   const [form, setForm] = useState<NewSlotForm>({ day: "", startTime: "", endTime: "" });
   const [formError, setFormError] = useState<string | null>(null);
   const [showPasscodeDialog, setShowPasscodeDialog] = useState(false);
+  const [showUsernameDialog, setShowUsernameDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showScrollCue, setShowScrollCue] = useState(false);
 
@@ -2523,6 +2655,7 @@ export default function Teacher() {
 
       <div className="relative max-w-3xl mx-auto z-10 pb-24">
         <ChangePasscodeDialog open={showPasscodeDialog} onClose={() => setShowPasscodeDialog(false)} />
+        <ChangeUsernameDialog open={showUsernameDialog} onClose={() => setShowUsernameDialog(false)} />
         <DeleteAccountDialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)} />
         <DurationOptionsDialog
           open={showDurationDialog}
@@ -2538,6 +2671,13 @@ export default function Teacher() {
               <ArrowLeft className="w-4 h-4 mr-1.5" />Back to Student Booking
             </Link>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowUsernameDialog(true)}
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/50 hover:border-border rounded-lg px-3 py-1.5 transition-all bg-card/60 hover:bg-card"
+              >
+                <AtSign className="w-3.5 h-3.5" />
+                Change Username
+              </button>
               <button
                 onClick={() => setShowPasscodeDialog(true)}
                 className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/50 hover:border-border rounded-lg px-3 py-1.5 transition-all bg-card/60 hover:bg-card"

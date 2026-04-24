@@ -131,4 +131,37 @@ router.put("/auth/teacher/passcode", requireTeacherSession, async (req, res) => 
   res.json({ ok: true });
 });
 
+router.put("/auth/teacher/slug", requireTeacherSession, async (req, res) => {
+  const { newSlug, passcode } = req.body ?? {};
+  if (typeof newSlug !== "string" || typeof passcode !== "string") {
+    res.status(400).json({ message: "newSlug and passcode are required." });
+    return;
+  }
+  const slug = newSlug.trim().toLowerCase();
+  if (slug.length < 3) {
+    res.status(400).json({ message: "Username must be at least 3 characters." });
+    return;
+  }
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    res.status(400).json({ message: "Username can only contain lowercase letters, numbers, and hyphens." });
+    return;
+  }
+  const rows = await db.select().from(teachersTable).where(eq(teachersTable.id, res.locals.teacherId)).limit(1);
+  if (!rows.length || rows[0].passcode !== passcode) {
+    res.status(401).json({ message: "Incorrect passcode." });
+    return;
+  }
+  if (rows[0].slug === slug) {
+    res.status(400).json({ message: "That is already your username." });
+    return;
+  }
+  const existing = await db.select({ id: teachersTable.id }).from(teachersTable).where(eq(teachersTable.slug, slug)).limit(1);
+  if (existing.length) {
+    res.status(409).json({ message: "That username is already taken. Please choose a different one." });
+    return;
+  }
+  await db.update(teachersTable).set({ slug }).where(eq(teachersTable.id, res.locals.teacherId));
+  res.json({ ok: true, slug });
+});
+
 export default router;
