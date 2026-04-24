@@ -165,14 +165,17 @@ Scoring system (higher is better):
 Goal: maximise total score across all students.
 
 How the algorithm works:
-- Students submitted 3 ranked time preferences (1st, 2nd, 3rd choice).
-- The algorithm processes students in the order you specify.
-- When multiple students compete for the same slot, the student listed FIRST in your priority order wins.
-- A student left unassigned costs -6 points — far worse than giving them a 3rd choice (+1). Ordering matters most for tie-breaking; the algorithm already tries to minimise unassigned students.
+- Students submitted up to 5 ranked time preferences.
+- The algorithm processes students in EXACTLY the order you specify — no overrides.
+- The first student in your list gets their highest available preference, then the second, and so on.
+- Because the order is strictly respected, placement in the list is critical:
+  - Put students whose preferences are heavily contested (many others want the same slots) EARLIER so they secure a slot before it fills up.
+  - Put students who have more flexible or unique preferences LATER — they're less at risk of being left out.
+  - A student left unassigned costs -6 points — far worse than a 3rd choice (+1). Avoid leaving anyone unassigned if possible.
 - By default, students who submitted earlier are listed first (first-come, first-served).
 
 Your task:
-1. Read the teacher's preferences carefully.
+1. Read the teacher's preferences carefully, then consider which students are most at risk of being unassigned.
 2. In 2-3 sentences, explain how you are interpreting the preferences and what ordering you chose to maximise the score.
 3. Output a SCHEDULE_PARAMS block in EXACTLY this format:
 
@@ -185,8 +188,7 @@ Your task:
 
 Rules for studentOrder:
 - Must be an array containing ALL booking IDs from the input data (no additions, no omissions).
-- The student listed first wins any tie conflict for the same slot.
-- Interpret preferences creatively: "prioritize [name]" → put that student first; "randomize" → shuffle; "give late submissions a chance" → reverse submission order; "be fair" → already fair by default order.
+- Interpret preferences creatively: "prioritize [name]" → put that student first; "randomize" → shuffle; "give late submissions a chance" → reverse submission order; "be fair" → keep original submission order.
 - If the teacher's preference is vague or doesn't clearly map to an ordering, keep the original submission order.
 - Always output valid JSON inside the <SCHEDULE_PARAMS> block.`;
 
@@ -287,8 +289,10 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
     // Scoring: 1st=3, 2nd=2, 3rd=1, unassigned=-6
     const PRIORITY_SCORE: Record<number, number> = { 1: 3, 2: 2, 3: 1 };
 
-    // Greedy: constrained-first (fewest distinct days → fewest available → AI order for ties)
-    // Includes overlap detection so two students can't get the same time window.
+    // Pure AI-order assignment: process students in exactly the order the model
+    // specified. Each student gets their highest available preference. The AI
+    // prompt already explains the scoring trade-offs, so the model can factor
+    // in constraint pressure when building the ordering.
     const toMinsAi = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m ?? 0); };
     const parsePriority = (p: string | null | undefined) => {
       if (!p || !p.includes("|")) return null;
@@ -303,54 +307,28 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
       return { slotId, startMins, endMins, key: p };
     };
 
-    // Only gate on headcount — multiple students may share the same time window
-    // (group sessions), so interval overlap is not a valid block condition.
+    // Only gate on headcount — multiple students may share the same time window.
     const assignedCountBySlot = new Map<number, number>();
     const slotAtCapacity = (slotId: number) => (assignedCountBySlot.get(slotId) ?? 0) >= maxPerSlot;
-    const overlapsAssigned = (slotId: number, _start: number, _end: number) => slotAtCapacity(slotId);
-    const markAssigned = (slotId: number, _start: number, _end: number) => {
+    const markAssigned = (slotId: number) => {
       assignedCountBySlot.set(slotId, (assignedCountBySlot.get(slotId) ?? 0) + 1);
     };
 
-    // Parse priorities in AI-determined order (tie-breaking uses this order)
     const bookingParsed = sortedBookings.map(b => ({
       bookingId: b.id,
-      priorities: [b.priority1, b.priority2, b.priority3].map(parsePriority),
+      priorities: [b.priority1, b.priority2, b.priority3, b.priority4, b.priority5].map(parsePriority),
     }));
 
     const assignments = new Map<number, { priority: number; time: string }>();
-    const unassigned = new Set(bookingParsed.map(b => b.bookingId));
 
-    while (unassigned.size > 0) {
-      let bestEntry: typeof bookingParsed[0] | null = null;
-      let bestDays = Infinity;
-      let bestAvail = Infinity;
-
-      for (const entry of bookingParsed) {
-        if (!unassigned.has(entry.bookingId)) continue;
-        const availPriorities = entry.priorities.filter(
-          p => p !== null &&
-               allSlots.some(s => s.id === p!.slotId) &&
-               !overlapsAssigned(p!.slotId, p!.startMins, p!.endMins)
-        ) as NonNullable<ReturnType<typeof parsePriority>>[];
-        const avail = availPriorities.length;
-        const days = new Set(availPriorities.map(p => allSlots.find(s => s.id === p.slotId)?.label ?? p.slotId)).size;
-        if (days < bestDays || (days === bestDays && avail < bestAvail)) {
-          bestDays = days; bestAvail = avail; bestEntry = entry;
-        }
-      }
-
-      if (!bestEntry) break;
-      unassigned.delete(bestEntry.bookingId);
-      if (bestAvail === 0) continue;
-
-      for (let i = 0; i < bestEntry.priorities.length; i++) {
-        const p = bestEntry.priorities[i];
+    for (const entry of bookingParsed) {
+      for (let i = 0; i < entry.priorities.length; i++) {
+        const p = entry.priorities[i];
         if (!p) continue;
         if (!allSlots.find(s => s.id === p.slotId)) continue;
-        if (overlapsAssigned(p.slotId, p.startMins, p.endMins)) continue;
-        assignments.set(bestEntry.bookingId, { priority: i + 1, time: p.key });
-        markAssigned(p.slotId, p.startMins, p.endMins);
+        if (slotAtCapacity(p.slotId)) continue;
+        assignments.set(entry.bookingId, { priority: i + 1, time: p.key });
+        markAssigned(p.slotId);
         break;
       }
     }
