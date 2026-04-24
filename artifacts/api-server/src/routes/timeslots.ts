@@ -445,14 +445,19 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
     return { slotId, startMins, endMins, key: p };
   };
 
-  // Track student count per slot to enforce the teacher-set maxStudents cap.
-  // Multiple students can share the same time window within a slot (group sessions),
-  // so we only gate on headcount — not on interval overlap.
-  const assignedCountBySlot = new Map<number, number>();
-  const slotAtCapacity = (slotId: number) => (assignedCountBySlot.get(slotId) ?? 0) >= maxPerSlot;
-  const overlapsAssigned = (slotId: number, _start: number, _end: number) => slotAtCapacity(slotId);
-  const markAssigned = (slotId: number, _start: number, _end: number) => {
-    assignedCountBySlot.set(slotId, (assignedCountBySlot.get(slotId) ?? 0) + 1);
+  // A window is blocked when maxPerSlot students already have overlapping intervals in the slot.
+  // This means the cap governs concurrent occupancy, not total headcount —
+  // students at non-overlapping times never block each other.
+  const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
+  const isWindowFull = (slotId: number, start: number, end: number): boolean => {
+    const existing = assignedBySlot.get(slotId) ?? [];
+    const overlapping = existing.filter(iv => start < iv.end && end > iv.start);
+    return overlapping.length >= maxPerSlot;
+  };
+  const overlapsAssigned = isWindowFull;
+  const markAssigned = (slotId: number, start: number, end: number) => {
+    if (!assignedBySlot.has(slotId)) assignedBySlot.set(slotId, []);
+    assignedBySlot.get(slotId)!.push({ start, end });
   };
 
   // Parse all priorities for each booking up front (up to 5)
@@ -555,11 +560,41 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
   res.json({ results, summary });
 });
 
+// Sweep-line: return the contiguous time ranges (in minutes) where concurrent
+// occupancy of `intervals` meets or exceeds `maxOccupancy`.
+// End events are sorted before start events at the same timestamp so that two
+// back-to-back non-overlapping windows (e.g. 9:00-9:30 then 9:30-10:00) are
+// not mistakenly counted as simultaneous.
+function saturatedRanges(
+  intervals: Array<{ start: number; end: number }>,
+  maxOccupancy: number
+): Array<{ start: number; end: number }> {
+  if (maxOccupancy <= 0 || intervals.length === 0) return [];
+  const events: Array<{ time: number; delta: 1 | -1 }> = [];
+  for (const iv of intervals) {
+    events.push({ time: iv.start, delta: 1 });
+    events.push({ time: iv.end, delta: -1 });
+  }
+  events.sort((a, b) => a.time - b.time || a.delta - b.delta); // end(-1) before start(+1) at tie
+  const result: Array<{ start: number; end: number }> = [];
+  let occ = 0;
+  let satStart: number | null = null;
+  for (const ev of events) {
+    occ += ev.delta;
+    if (occ >= maxOccupancy && satStart === null) {
+      satStart = ev.time;
+    } else if (occ < maxOccupancy && satStart !== null) {
+      result.push({ start: satStart, end: ev.time });
+      satStart = null;
+    }
+  }
+  return result;
+}
+
 // Recompute blockedTimes for a set of slot IDs based on their currently assigned bookings.
-// assignedTime is "assignedSlotId|HH:MM-HH:MM" — the slotId prefix identifies the actual
-// assigned slot, which may differ from the booking's original timeSlotId.
-// A time window is only marked blocked once it has been filled up to the teacher's
-// maxStudentsPerSlot cap — so students can still book into windows that have capacity.
+// assignedTime is "assignedSlotId|HH:MM-HH:MM". A time range is blocked only when
+// concurrent occupancy at every point in that range has reached the teacher's
+// maxStudentsPerSlot cap — so students can still book into windows that have room.
 async function syncBlockedTimes(slotIds: number[]) {
   if (slotIds.length === 0) return;
 
@@ -576,13 +611,14 @@ async function syncBlockedTimes(slotIds: number[]) {
         .then(rows => rows[0]?.maxStudentsPerSlot ?? 1)
     : 1;
 
-  // Fetch all assigned bookings for these slots (by original timeSlotId)
+  // Fetch all assigned bookings for these slots
   const assigned = await db.select({ assignedTime: bookingsTable.assignedTime })
     .from(bookingsTable)
     .where(and(inArray(bookingsTable.timeSlotId, slotIds), isNotNull(bookingsTable.assignedTime)));
 
-  // Count how many students are assigned to each (slotId, "start-end") window
-  const windowCount = new Map<string, number>();
+  // Parse and group intervals by their actual assigned slot ID
+  const intervalsBySlot = new Map<number, Array<{ start: number; end: number }>>();
+  for (const sid of slotIds) intervalsBySlot.set(sid, []);
   for (const b of assigned) {
     if (!b.assignedTime) continue;
     const pipeIdx = b.assignedTime.indexOf("|");
@@ -590,26 +626,19 @@ async function syncBlockedTimes(slotIds: number[]) {
     const assignedSlotId = parseInt(b.assignedTime.slice(0, pipeIdx), 10);
     if (isNaN(assignedSlotId)) continue;
     const range = b.assignedTime.slice(pipeIdx + 1);
-    const key = `${assignedSlotId}|${range}`;
-    windowCount.set(key, (windowCount.get(key) ?? 0) + 1);
-  }
-
-  // Build per-slot blocked lists: only include windows that are at capacity
-  const grouped = new Map<number, Array<{ start: string; end: string }>>();
-  for (const sid of slotIds) grouped.set(sid, []); // ensure every affected slot is cleared
-  for (const [key, count] of windowCount) {
-    if (count < maxPerSlot) continue; // window still has room — keep it open
-    const pipeIdx = key.indexOf("|");
-    const assignedSlotId = parseInt(key.slice(0, pipeIdx), 10);
-    const range = key.slice(pipeIdx + 1);
     const dashIdx = range.indexOf("-");
     if (dashIdx === -1) continue;
-    const entry = grouped.get(assignedSlotId) ?? [];
-    entry.push({ start: range.slice(0, dashIdx), end: range.slice(dashIdx + 1) });
-    grouped.set(assignedSlotId, entry);
+    const startMins = toMins(range.slice(0, dashIdx));
+    const endMins = toMins(range.slice(dashIdx + 1));
+    const list = intervalsBySlot.get(assignedSlotId) ?? [];
+    list.push({ start: startMins, end: endMins });
+    intervalsBySlot.set(assignedSlotId, list);
   }
 
-  for (const [slotId, blocked] of grouped) {
+  // For each slot, compute which time ranges are saturated and write them
+  for (const [slotId, intervals] of intervalsBySlot) {
+    const saturated = saturatedRanges(intervals, maxPerSlot);
+    const blocked = saturated.map(r => ({ start: fromMins(r.start), end: fromMins(r.end) }));
     await db.update(timeSlotsTable)
       .set({ blockedTimes: blocked.length > 0 ? blocked : null })
       .where(eq(timeSlotsTable.id, slotId));
@@ -642,14 +671,16 @@ async function scheduleUnassigned(teacherId: number, lastBookingId: number) {
     return { slotId, startMins: toMins(range.slice(0, di)), endMins: toMins(range.slice(di + 1)), key: p };
   };
 
-  // Track per-slot student counts to enforce the teacher's universal cap.
-  // Multiple students can share the same time window (group sessions), so we
-  // only gate on headcount — not on interval overlap.
-  const assignedCountBySlot = new Map<number, number>();
-  const slotFull = (slotId: number) => (assignedCountBySlot.get(slotId) ?? 0) >= maxPerSlot;
-  const overlaps = (slotId: number, _s: number, _e: number) => slotFull(slotId);
-  const mark = (slotId: number, _s: number, _e: number) => {
-    assignedCountBySlot.set(slotId, (assignedCountBySlot.get(slotId) ?? 0) + 1);
+  // A window is full when maxPerSlot students already have overlapping intervals —
+  // concurrent occupancy cap, not total headcount per slot.
+  const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
+  const overlaps = (slotId: number, s: number, e: number): boolean => {
+    const existing = assignedBySlot.get(slotId) ?? [];
+    return existing.filter(iv => s < iv.end && e > iv.start).length >= maxPerSlot;
+  };
+  const mark = (slotId: number, s: number, e: number) => {
+    if (!assignedBySlot.has(slotId)) assignedBySlot.set(slotId, []);
+    assignedBySlot.get(slotId)!.push({ start: s, end: e });
   };
 
   for (const b of allBookings) {

@@ -307,11 +307,16 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
       return { slotId, startMins, endMins, key: p };
     };
 
-    // Only gate on headcount — multiple students may share the same time window.
-    const assignedCountBySlot = new Map<number, number>();
-    const slotAtCapacity = (slotId: number) => (assignedCountBySlot.get(slotId) ?? 0) >= maxPerSlot;
-    const markAssigned = (slotId: number) => {
-      assignedCountBySlot.set(slotId, (assignedCountBySlot.get(slotId) ?? 0) + 1);
+    // Cap governs concurrent occupancy: a window is full when maxPerSlot students
+    // already have overlapping intervals in that slot.
+    const assignedBySlot = new Map<number, Array<{ start: number; end: number }>>();
+    const isWindowFull = (slotId: number, start: number, end: number): boolean => {
+      const existing = assignedBySlot.get(slotId) ?? [];
+      return existing.filter(iv => start < iv.end && end > iv.start).length >= maxPerSlot;
+    };
+    const markAssigned = (slotId: number, start: number, end: number) => {
+      if (!assignedBySlot.has(slotId)) assignedBySlot.set(slotId, []);
+      assignedBySlot.get(slotId)!.push({ start, end });
     };
 
     const bookingParsed = sortedBookings.map(b => ({
@@ -326,9 +331,9 @@ router.post("/ai/auto-schedule", requireTeacherSession, async (req, res) => {
         const p = entry.priorities[i];
         if (!p) continue;
         if (!allSlots.find(s => s.id === p.slotId)) continue;
-        if (slotAtCapacity(p.slotId)) continue;
+        if (isWindowFull(p.slotId, p.startMins, p.endMins)) continue;
         assignments.set(entry.bookingId, { priority: i + 1, time: p.key });
-        markAssigned(p.slotId);
+        markAssigned(p.slotId, p.startMins, p.endMins);
         break;
       }
     }
