@@ -558,17 +558,31 @@ router.post("/bookings/auto-schedule", requireTeacherSession, async (req, res) =
 // Recompute blockedTimes for a set of slot IDs based on their currently assigned bookings.
 // assignedTime is "assignedSlotId|HH:MM-HH:MM" — the slotId prefix identifies the actual
 // assigned slot, which may differ from the booking's original timeSlotId.
+// A time window is only marked blocked once it has been filled up to the teacher's
+// maxStudentsPerSlot cap — so students can still book into windows that have capacity.
 async function syncBlockedTimes(slotIds: number[]) {
   if (slotIds.length === 0) return;
+
+  // Look up the teacher's cap via any of the affected slots
+  const [slotRow] = await db.select({ teacherId: timeSlotsTable.teacherId })
+    .from(timeSlotsTable)
+    .where(inArray(timeSlotsTable.id, slotIds))
+    .limit(1);
+  const maxPerSlot = slotRow
+    ? await db.select({ maxStudentsPerSlot: teachersTable.maxStudentsPerSlot })
+        .from(teachersTable)
+        .where(eq(teachersTable.id, slotRow.teacherId))
+        .limit(1)
+        .then(rows => rows[0]?.maxStudentsPerSlot ?? 1)
+    : 1;
 
   // Fetch all assigned bookings for these slots (by original timeSlotId)
   const assigned = await db.select({ assignedTime: bookingsTable.assignedTime })
     .from(bookingsTable)
     .where(and(inArray(bookingsTable.timeSlotId, slotIds), isNotNull(bookingsTable.assignedTime)));
 
-  // Group blocked intervals by the slot ID encoded in assignedTime, not by timeSlotId
-  const grouped = new Map<number, Array<{ start: string; end: string }>>();
-  for (const sid of slotIds) grouped.set(sid, []); // ensure every affected slot is cleared
+  // Count how many students are assigned to each (slotId, "start-end") window
+  const windowCount = new Map<string, number>();
   for (const b of assigned) {
     if (!b.assignedTime) continue;
     const pipeIdx = b.assignedTime.indexOf("|");
@@ -576,6 +590,18 @@ async function syncBlockedTimes(slotIds: number[]) {
     const assignedSlotId = parseInt(b.assignedTime.slice(0, pipeIdx), 10);
     if (isNaN(assignedSlotId)) continue;
     const range = b.assignedTime.slice(pipeIdx + 1);
+    const key = `${assignedSlotId}|${range}`;
+    windowCount.set(key, (windowCount.get(key) ?? 0) + 1);
+  }
+
+  // Build per-slot blocked lists: only include windows that are at capacity
+  const grouped = new Map<number, Array<{ start: string; end: string }>>();
+  for (const sid of slotIds) grouped.set(sid, []); // ensure every affected slot is cleared
+  for (const [key, count] of windowCount) {
+    if (count < maxPerSlot) continue; // window still has room — keep it open
+    const pipeIdx = key.indexOf("|");
+    const assignedSlotId = parseInt(key.slice(0, pipeIdx), 10);
+    const range = key.slice(pipeIdx + 1);
     const dashIdx = range.indexOf("-");
     if (dashIdx === -1) continue;
     const entry = grouped.get(assignedSlotId) ?? [];
