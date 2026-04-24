@@ -2198,36 +2198,6 @@ function WeeklyCalendar() {
           </div>
         );
       })}
-      {(() => {
-        const unassigned = (bookings ?? []).filter(b => !(b as any).assignedTime);
-        if (unassigned.length === 0) return null;
-        return (
-          <div className="rounded-xl border border-dashed border-border/60 bg-muted/20 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-muted-foreground/30 shrink-0" />
-                <span className="font-semibold text-sm text-muted-foreground">Unassigned</span>
-              </div>
-              <span className="text-xs text-muted-foreground font-medium flex items-center gap-1">
-                <Users className="w-3 h-3" />{unassigned.length} student{unassigned.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="px-4 pb-3 space-y-1.5">
-              {unassigned.map((b) => (
-                <div key={b.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-background border border-border/50">
-                  <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-muted-foreground font-bold text-xs shrink-0">
-                    {b.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-foreground truncate">{b.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{b.email}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }
