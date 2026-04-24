@@ -102,11 +102,16 @@ function renderHome() {
   };
 }
 
+/** Selects the mock slot from the dropdown. */
+async function pickSlot() {
+  const sel = await screen.findByRole("combobox");
+  fireEvent.change(sel, { target: { value: String(MOCK_SLOT.id) } });
+}
+
 /** Clicks through one complete 3-sub-page choice: picks slot, picks duration, picks first available time */
 async function fillOneChoice(user: ReturnType<typeof userEvent.setup>, time = "09:00") {
   // subPage 0: slot picker
-  const slotBtn = await screen.findByText(MOCK_SLOT.label);
-  await user.click(slotBtn);
+  await pickSlot();
 
   const next0 = await screen.findByText(/^Next/);
   expect(next0).not.toBeDisabled();
@@ -207,7 +212,7 @@ describe("Slot picker (page 0)", () => {
     const { user } = renderHome();
     await waitFor(() => screen.getByText("Book a Session"));
     await user.click(screen.getByText("Book a Session"));
-    await user.click(await screen.findByText(MOCK_SLOT.label));
+    await pickSlot();
     expect(screen.getByText(/^Next/)).not.toBeDisabled();
   });
 });
@@ -218,7 +223,7 @@ describe("Duration picker (page 1)", () => {
   async function goToDuration(user: ReturnType<typeof userEvent.setup>) {
     await waitFor(() => screen.getByText("Book a Session"));
     await user.click(screen.getByText("Book a Session"));
-    await user.click(await screen.findByText(MOCK_SLOT.label));
+    await pickSlot();
     await user.click(screen.getByText(/^Next/));
   }
 
@@ -250,7 +255,7 @@ describe("Time picker (page 2)", () => {
   async function goToTime(user: ReturnType<typeof userEvent.setup>) {
     await waitFor(() => screen.getByText("Book a Session"));
     await user.click(screen.getByText("Book a Session"));
-    await user.click(await screen.findByText(MOCK_SLOT.label));
+    await pickSlot();
     await user.click(screen.getByText(/^Next/));
     await user.click(await screen.findByText("30 min"));
     await user.click(screen.getByText(/^Next/));
@@ -291,14 +296,14 @@ describe("Choice persistence when navigating back", () => {
     const { user } = renderHome();
     await waitFor(() => screen.getByText("Book a Session"));
     await user.click(screen.getByText("Book a Session"));
-    await user.click(await screen.findByText(MOCK_SLOT.label));
+    await pickSlot();
     // Advance to duration picker
     await user.click(screen.getByText(/^Next/));
     await screen.findByText("30 min");
     // Go back
     await user.click(screen.getByText(/Back/));
     // Slot still shown as selected (Next should be enabled)
-    await screen.findByText(MOCK_SLOT.label);
+    await screen.findByRole("combobox");
     expect(screen.getByText(/^Next/)).not.toBeDisabled();
   });
 });

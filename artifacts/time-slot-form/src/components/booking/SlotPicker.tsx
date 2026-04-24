@@ -1,4 +1,4 @@
-import { AlertCircle, CalendarDays, Check } from "lucide-react";
+import { AlertCircle, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConflictNotice } from "@/components/ConflictNotice";
 import type { ApiSlot, Choice } from "@/types/booking";
@@ -61,11 +61,7 @@ export function SlotPicker({
       </div>
 
       {isLoading ? (
-        <div className="space-y-2">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-16 rounded-xl bg-muted/50 animate-pulse" />
-          ))}
-        </div>
+        <div className="h-10 rounded-xl bg-muted/50 animate-pulse" />
       ) : isError ? (
         <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm flex gap-2 items-center">
           <AlertCircle className="w-4 h-4 shrink-0" />
@@ -76,34 +72,26 @@ export function SlotPicker({
           No availability right now. Please check back later.
         </div>
       ) : (
-        <div className="space-y-2">
-          {availableSlots.map(slot => {
-            const sel = currentChoice.slotId === slot.id;
-            return (
-              <button
-                key={slot.id}
-                type="button"
-                onClick={() => onSelectSlot(slot.id)}
-                className={cn(
-                  "w-full flex items-center justify-between px-4 py-3.5 rounded-xl border-2 text-left transition-all",
-                  sel
-                    ? "border-primary bg-primary/10"
-                    : "border-border bg-background/60 hover:border-primary/40 hover:bg-primary/5",
-                )}
-              >
-                <div className={cn("font-semibold text-sm", sel ? "text-primary" : "text-foreground")}>
-                  {slot.label}
-                </div>
-                <div className={cn(
-                  "w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
-                  sel ? "bg-primary border-primary" : "border-muted-foreground/30",
-                )}>
-                  {sel && <Check className="w-3 h-3 text-primary-foreground" />}
-                </div>
-              </button>
-            );
-          })}
-        </div>
+        <select
+          value={currentChoice.slotId ?? ""}
+          onChange={e => {
+            const val = e.target.value;
+            if (val !== "") onSelectSlot(Number(val));
+          }}
+          className={cn(
+            "w-full rounded-xl border-2 bg-background px-4 py-3 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30",
+            currentChoice.slotId != null
+              ? "border-primary text-primary"
+              : "border-border text-muted-foreground",
+          )}
+        >
+          <option value="" disabled>Select a day…</option>
+          {availableSlots.map(slot => (
+            <option key={slot.id} value={slot.id}>
+              {slot.label}
+            </option>
+          ))}
+        </select>
       )}
 
       {teacher?.blockFromAppointments === false && <ConflictNotice />}
