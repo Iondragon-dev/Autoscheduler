@@ -160,8 +160,8 @@ router.put("/auth/teacher/slug", requireTeacherSession, async (req, res) => {
     res.status(409).json({ message: "That username is already taken. Please choose a different one." });
     return;
   }
-  await db.update(teachersTable).set({ slug }).where(eq(teachersTable.id, res.locals.teacherId));
-  res.json({ ok: true, slug });
+  await db.update(teachersTable).set({ slug, name: slug }).where(eq(teachersTable.id, res.locals.teacherId));
+  res.json({ ok: true, slug, name: slug });
 });
 
 export default router;

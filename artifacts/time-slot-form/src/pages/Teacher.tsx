@@ -226,7 +226,7 @@ function ChangeUsernameDialog({ open, onClose }: { open: boolean; onClose: () =>
       if (!res.ok) { setError(data.message ?? "Failed to update username."); }
       else {
         const info = getTeacherInfo();
-        if (info) sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...info, slug: data.slug }));
+        if (info) sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...info, slug: data.slug, name: data.name }));
         setSuccess(true);
       }
     } catch {
