@@ -2350,6 +2350,7 @@ export default function Teacher() {
   const [blockFromAppointments, setBlockFromAppointments] = useState(true);
   const [durationOptions, setDurationOptions] = useState<DurationOption[] | null>(null);
   const [numChoices, setNumChoices] = useState(3);
+  const numChoicesSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [minStudentsPerSlot, setMinStudentsPerSlot] = useState(1);
   const [maxStudentsPerSlot, setMaxStudentsPerSlot] = useState(1);
   const [showDurationDialog, setShowDurationDialog] = useState(false);
@@ -2563,14 +2564,17 @@ export default function Teacher() {
     setDurationOptions(opts);
   };
 
-  const handleSetNumChoices = async (n: number) => {
+  const handleSetNumChoices = (n: number) => {
     const next = Math.max(1, Math.min(5, n));
     setNumChoices(next);
-    await adminFetch(`${import.meta.env.BASE_URL}api/teachers/me/settings`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ numChoices: next }),
-    });
+    if (numChoicesSaveTimer.current) clearTimeout(numChoicesSaveTimer.current);
+    numChoicesSaveTimer.current = setTimeout(() => {
+      adminFetch(`${import.meta.env.BASE_URL}api/teachers/me/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ numChoices: next }),
+      });
+    }, 600);
   };
 
   const handleSetMinStudentsPerSlot = async (n: number) => {

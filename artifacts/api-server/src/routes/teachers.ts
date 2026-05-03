@@ -83,8 +83,8 @@ router.post("/teachers", async (req, res) => {
     res.status(400).json({ message: "name, slug, and passcode are required." });
     return;
   }
-  if (!/^[a-z0-9-]+$/.test(slug)) {
-    res.status(400).json({ message: "Slug must only contain lowercase letters, numbers, and hyphens." });
+  if (!/^[a-zA-Z0-9-]+$/.test(slug)) {
+    res.status(400).json({ message: "Username can only contain letters, numbers, and hyphens." });
     return;
   }
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {

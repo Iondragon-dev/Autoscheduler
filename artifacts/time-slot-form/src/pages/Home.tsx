@@ -75,9 +75,18 @@ export default function Home() {
       setChoices(makeEmptyChoices(numChoices));
       return;
     }
-    if (prevNumChoicesRef.current !== numChoices && page === 0 && !confirmedBooking) {
+    if (prevNumChoicesRef.current !== numChoices && !confirmedBooking) {
       prevNumChoicesRef.current = numChoices;
-      setChoices(makeEmptyChoices(numChoices));
+      if (page === 0) {
+        setChoices(makeEmptyChoices(numChoices));
+      } else {
+        // Mid-form: pad or trim existing choices to the new length without losing progress
+        setChoices(prev => {
+          if (prev.length === numChoices) return prev;
+          if (prev.length > numChoices) return prev.slice(0, numChoices);
+          return [...prev, ...makeEmptyChoices(numChoices - prev.length)];
+        });
+      }
     }
   }, [numChoices]);
 
