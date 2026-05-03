@@ -342,15 +342,17 @@ router.post("/bookings", async (req, res) => {
     return;
   }
 
-  // Enforce teacher-configured minimum number of choices
+  // Fetch teacher settings (numChoices requirement + appointment-blocking flag)
+  let blockFromAppointments = true;
   if (teacherId != null) {
-    const teacherRow = await db.select({ totalPages: teachersTable.totalPages }).from(teachersTable).where(eq(teachersTable.id, teacherId)).limit(1);
+    const teacherRow = await db.select({ totalPages: teachersTable.totalPages, blockFromAppointments: teachersTable.blockFromAppointments }).from(teachersTable).where(eq(teachersTable.id, teacherId)).limit(1);
     if (teacherRow.length > 0) {
       const requiredChoices = Math.round((teacherRow[0].totalPages - 1) / 3);
       if (filledPriorityStrs.length < requiredChoices) {
         res.status(400).json({ message: `Please submit ${requiredChoices} ${requiredChoices === 1 ? "preference" : "preferences"} as required by your teacher.` });
         return;
       }
+      blockFromAppointments = teacherRow[0].blockFromAppointments ?? true;
     }
   }
 
@@ -376,11 +378,13 @@ router.post("/bookings", async (req, res) => {
       res.status(400).json({ message: "One of your selected times is outside the allowed range. Please go back and choose again." });
       return;
     }
-    const blocked = (refSlot.blockedTimes ?? []);
-    const overlapsBlocked = blocked.some(b => toMins(b.start) < pEnd && toMins(b.end) > pStart);
-    if (overlapsBlocked) {
-      res.status(400).json({ message: "One of your selected times is no longer available. Please go back and choose again." });
-      return;
+    if (blockFromAppointments) {
+      const blocked = (refSlot.blockedTimes ?? []);
+      const overlapsBlocked = blocked.some(b => toMins(b.start) < pEnd && toMins(b.end) > pStart);
+      if (overlapsBlocked) {
+        res.status(400).json({ message: "One of your selected times is no longer available. Please go back and choose again." });
+        return;
+      }
     }
   }
 
