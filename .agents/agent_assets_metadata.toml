@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "CliSfXihgxFLgVKfVS86o"
+uri = "file://time-slot-booking.zip"
+type = "unspecified"
+title = "time-slot-booking.zip — full project source"
